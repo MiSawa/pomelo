@@ -1,0 +1,18 @@
+[env]
+MIKAN_DEV_PATH = './mikanos-build/devenv'
+EFI_FILE = "${CARGO_MAKE_CRATE_CUSTOM_TRIPLE_TARGET_DIRECTORY}/debug/pomelo-bootloader.efi"
+
+[config]
+default_to_workspace = false
+
+[tasks.qemu]
+dependencies = ['build']
+command = "${MIKAN_DEV_PATH}/run_qemu.sh"
+args = ["${EFI_FILE}"]
+
+[tasks.clean]
+dependencies = [
+    { name = 'clean', path = 'crates/bootloader' },
+    'unmount'
+]
+

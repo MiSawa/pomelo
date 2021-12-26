@@ -15,9 +15,10 @@ fn main(_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
         .reset(false)
         .expect_success("Failed to reset stdout");
 
-    writeln!(system_table.stdout(), "Hello, world!").expect("Failed to write to stdout");
+    writeln!(system_table.stdout(), "Hello, world!!!!").expect("Failed to write to stdout");
 
     #[allow(clippy::empty_loop)]
     loop {}
     // Status::SUCCESS
 }
+
