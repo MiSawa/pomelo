@@ -9,6 +9,7 @@ extern crate alloc;
 use anyhow::{anyhow, bail, Context as _, Error, Result};
 use core::{arch::asm, fmt::Write};
 use object::{Object, ObjectSegment};
+use pomelo_common::KernelArg;
 use uefi::{
     prelude::*,
     proto::{
@@ -49,6 +50,10 @@ fn actual_main(handle: Handle, mut st: SystemTable<Boot>) -> Result<()> {
     for i in 0..fb.size() {
         unsafe { fb.write_byte(i, 255) };
     }
+    let arg = KernelArg {
+        frame_buffer_base: fb.as_mut_ptr(),
+        frame_buffer_size: fb.size(),
+    };
 
     let kernel_main = prepare_kernel(st.boot_services(), &mut root, "\\kernel.elf")?;
     writeln!(st.stdout(), "Loaded kernel").expect("Failed to write to stdout");
@@ -58,7 +63,7 @@ fn actual_main(handle: Handle, mut st: SystemTable<Boot>) -> Result<()> {
         .exit_boot_services(handle, &mut memory_map)
         .expect_success("Failed to exit boot services");
 
-    kernel_main();
+    kernel_main(arg);
 
     #[allow(clippy::empty_loop)]
     loop {
@@ -76,7 +81,7 @@ fn prepare_kernel(
     bs: &BootServices,
     root: &mut Directory,
     filename: &str,
-) -> Result<extern "sysv64" fn()> {
+) -> Result<extern "sysv64" fn(KernelArg)> {
     let kernel_file = root
         .open(filename, FileMode::Read, FileAttribute::empty())
         .warning_as_error()
@@ -132,7 +137,7 @@ fn prepare_kernel(
         .read(allocated_slice)
         .expect_success("Failed to read kernel into allocated memory");
 
-    let entry_point: extern "sysv64" fn() = unsafe { core::mem::transmute(entry_point) };
+    let entry_point: extern "sysv64" fn(KernelArg) = unsafe { core::mem::transmute(entry_point) };
     Ok(entry_point)
 }
 

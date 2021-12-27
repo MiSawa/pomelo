@@ -56,9 +56,14 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "object",
+ "pomelo-common",
  "uefi",
  "uefi-services",
 ]
+
+[[package]]
+name = "pomelo-common"
+version = "0.1.0"
 
 [[package]]
 name = "proc-macro2"

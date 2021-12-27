@@ -8,4 +8,5 @@ edition = "2021"
 
 [dependencies]
 anyhow = { version = "1.0", default-features = false }
+pomelo-common = { path = "../common" }
 
