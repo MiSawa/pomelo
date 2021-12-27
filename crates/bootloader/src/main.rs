@@ -11,12 +11,12 @@ use core::{arch::asm, fmt::Write};
 use object::{Object, ObjectSegment};
 use uefi::{
     prelude::*,
-    proto::media::file::{
-        Directory, File, FileAttribute, FileInfo, FileMode, FileType, RegularFile,
+    proto::{
+        console::gop::GraphicsOutput,
+        media::file::{Directory, File, FileAttribute, FileInfo, FileMode, FileType, RegularFile},
     },
     table::boot::{AllocateType, MemoryType},
     ResultExt,
-    proto::console::gop::GraphicsOutput,
 };
 
 #[entry]
@@ -33,22 +33,25 @@ fn actual_main(handle: Handle, mut st: SystemTable<Boot>) -> Result<()> {
 
     writeln!(st.stdout(), "Hello, world!!!!").expect("Failed to write to stdout");
 
-    let bs = st.boot_services();
-
-    let mut root = open_root_dir(handle, bs)
+    let mut root = open_root_dir(handle, st.boot_services())
         .warning_as_error()
         .map_err(|_| anyhow!("Failed to open a file to write the memory mapping"))?;
 
-    write_memory_map_file(bs, &mut root, "\\memmap")?;
+    write_memory_map_file(st.boot_services(), &mut root, "\\memmap")?;
+    writeln!(st.stdout(), "Wrote memory map file").expect("Failed to write to stdout");
 
-    let go = bs.locate_protocol::<GraphicsOutput>().expect_success("Unable to get graphics output");
+    let go = st
+        .boot_services()
+        .locate_protocol::<GraphicsOutput>()
+        .expect_success("Unable to get graphics output");
     let go = unsafe { &mut *go.get() };
     let mut fb = go.frame_buffer();
     for i in 0..fb.size() {
         unsafe { fb.write_byte(i, 255) };
     }
 
-    let kernel_main = prepare_kernel(bs, &mut root, "\\kernel.elf")?;
+    let kernel_main = prepare_kernel(st.boot_services(), &mut root, "\\kernel.elf")?;
+    writeln!(st.stdout(), "Loaded kernel").expect("Failed to write to stdout");
 
     let mut memory_map = [0; 16 * 1024];
     let (_st, _) = st
