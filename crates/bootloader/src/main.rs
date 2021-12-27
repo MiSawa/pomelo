@@ -3,9 +3,6 @@
 #![feature(abi_efiapi)]
 #![feature(int_roundings)]
 
-#[macro_use]
-extern crate alloc;
-
 use anyhow::{anyhow, bail, Context as _, Error, Result};
 use core::{arch::asm, fmt::Write};
 use object::{elf, read::elf::ProgramHeader as _, Endianness};
@@ -123,13 +120,31 @@ fn prepare_kernel<Elf: object::read::elf::FileHeader<Endian = Endianness>>(
     let kernel_file_info = kernel_file
         .get_info::<FileInfo>(&mut file_info_buffer)
         .expect_success("Failed to get file info");
+
     let kernel_file_size = kernel_file_info.file_size() as usize;
-    let mut kernel_content = vec![0; kernel_file_size];
+
+    struct AllocatedMemory<'a>(&'a BootServices, &'a mut [u8]);
+    impl<'a> Drop for AllocatedMemory<'a> {
+        fn drop(&mut self) {
+            self.0
+                .free_pool(self.1.as_mut_ptr())
+                .expect_success("Failed to free an allocated pool");
+        }
+    }
+    let kernel_content = {
+        let ptr = bs
+            .allocate_pool(MemoryType::LOADER_DATA, kernel_file_size)
+            .warning_as_error()
+            .map_err(|_| anyhow!("Unable to allocate temporary memory to read the kernel"))?;
+        AllocatedMemory(bs, unsafe {
+            core::slice::from_raw_parts_mut(ptr, kernel_file_size)
+        })
+    };
     kernel_file
-        .read(kernel_content.as_mut_slice())
+        .read(kernel_content.1)
         .expect_success("Unable to read kernel file content");
 
-    let elf = Elf::parse(kernel_content.as_slice())
+    let elf = Elf::parse(&kernel_content.1[..])
         .map_err(|_| anyhow!("Unable to parse the kernel file as elf"))?;
     let endian = elf
         .endian()
@@ -141,7 +156,7 @@ fn prepare_kernel<Elf: object::read::elf::FileHeader<Endian = Endianness>>(
         let mut end = u64::MIN;
 
         for segment in elf
-            .program_headers(endian, kernel_content.as_slice())
+            .program_headers(endian, &kernel_content.1[..])
             .map_err(|_| anyhow!("Unable to parse program headers of the kernel"))?
         {
             if segment.p_type(endian) == elf::PT_LOAD {
@@ -168,24 +183,21 @@ fn prepare_kernel<Elf: object::read::elf::FileHeader<Endian = Endianness>>(
         )
     };
     for segment in elf
-        .program_headers(endian, kernel_content.as_slice())
+        .program_headers(endian, &kernel_content.1[..])
         .map_err(|_| anyhow!("Unable to parse program headers of the kernel"))?
     {
         if segment.p_type(endian) == elf::PT_LOAD {
             let start_pos = segment.p_vaddr(endian).into() as usize - kernel_base_address;
             let end_pos = start_pos + segment.p_memsz(endian).into() as usize;
             let data = segment
-                .data(endian, kernel_content.as_slice())
+                .data(endian, &kernel_content.1[..])
                 .map_err(|_| anyhow!("Unable to read segment from kernel"))?;
             let copy_from_file_end_pos = start_pos + data.len();
             allocated_slice[start_pos..copy_from_file_end_pos].copy_from_slice(data);
             allocated_slice[copy_from_file_end_pos..end_pos].fill(0);
         }
     }
-    kernel_file
-        .read(allocated_slice)
-        .expect_success("Failed to read kernel into allocated memory");
-
+    drop(kernel_content);
     let entry_point: extern "sysv64" fn(KernelArg) = unsafe { core::mem::transmute(entry_point) };
     Ok(entry_point)
 }
