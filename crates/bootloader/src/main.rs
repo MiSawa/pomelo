@@ -8,7 +8,7 @@ extern crate alloc;
 
 use anyhow::{anyhow, bail, Context as _, Error, Result};
 use core::{arch::asm, fmt::Write};
-use object::{Object, ObjectSegment};
+use object::{elf, read::elf::ProgramHeader as _, Endianness};
 use pomelo_common::{GraphicConfig, KernelArg, PixelFormat};
 use uefi::{
     prelude::*,
@@ -17,7 +17,6 @@ use uefi::{
         media::file::{Directory, File, FileAttribute, FileInfo, FileMode, FileType, RegularFile},
     },
     table::boot::{AllocateType, MemoryType},
-    ResultExt,
 };
 
 #[entry]
@@ -41,7 +40,8 @@ fn actual_main(handle: Handle, mut st: SystemTable<Boot>) -> Result<()> {
     write_memory_map_file(st.boot_services(), &mut root, "\\memmap")?;
     writeln!(st.stdout(), "Wrote memory map file").expect("Failed to write to stdout");
 
-    let kernel_main = prepare_kernel(st.boot_services(), &mut root, "\\kernel")?;
+    let kernel_main =
+        prepare_kernel::<elf::FileHeader64<Endianness>>(st.boot_services(), &mut root, "\\kernel")?;
     writeln!(st.stdout(), "Loaded kernel").expect("Failed to write to stdout");
 
     let graphic_config = read_graphic_config(&mut st)?;
@@ -103,7 +103,7 @@ fn read_graphic_config(st: &mut SystemTable<Boot>) -> Result<GraphicConfig> {
     Ok(config)
 }
 
-fn prepare_kernel(
+fn prepare_kernel<Elf: object::read::elf::FileHeader<Endian = Endianness>>(
     bs: &BootServices,
     root: &mut Directory,
     filename: &str,
@@ -128,19 +128,33 @@ fn prepare_kernel(
     kernel_file
         .read(kernel_content.as_mut_slice())
         .expect_success("Unable to read kernel file content");
-    let obj = object::File::parse(kernel_content.as_slice())
-        .map_err(|_| anyhow!("Unable to parse kernel"))?;
 
-    let entry_point = obj.entry() as usize;
-    let mut start = u64::MAX;
-    let mut end = u64::MIN;
-    for segment in obj.segments() {
-        start = start.min(segment.address());
-        end = end.max(segment.address() + segment.size());
-    }
+    let elf = Elf::parse(kernel_content.as_slice())
+        .map_err(|_| anyhow!("Unable to parse the kernel file as elf"))?;
+    let endian = elf
+        .endian()
+        .map_err(|_| anyhow!("Unable to determin endian of the kernel file"))?;
+
+    let entry_point = elf.e_entry(endian).into() as usize;
+    let (kernel_base_address, kernel_length) = {
+        let mut start = u64::MAX;
+        let mut end = u64::MIN;
+
+        for segment in elf
+            .program_headers(endian, kernel_content.as_slice())
+            .map_err(|_| anyhow!("Unable to parse program headers of the kernel"))?
+        {
+            if segment.p_type(endian) == elf::PT_LOAD {
+                let start_pos = segment.p_vaddr(endian).into();
+                let end_pos = start_pos + segment.p_memsz(endian).into();
+                start = start.min(start_pos);
+                end = end.max(end_pos);
+            }
+        }
+        (start as usize, (end - start) as usize)
+    };
     const PAGE_SIZE: usize = 0x1000;
-    let kernel_base_address = start as usize;
-    let allocate_page_count = ((end - start) as usize).div_ceil(PAGE_SIZE);
+    let allocate_page_count = kernel_length.div_ceil(PAGE_SIZE);
     bs.allocate_pages(
         AllocateType::Address(kernel_base_address),
         MemoryType::LOADER_DATA,
@@ -153,11 +167,20 @@ fn prepare_kernel(
             allocate_page_count * PAGE_SIZE,
         )
     };
-    for segment in obj.segments() {
-        let data = segment.data().expect("Unable to read kernel segment");
-        let start_index = segment.address() as usize - kernel_base_address;
-        let end_index = start_index + data.len();
-        allocated_slice[start_index..end_index].copy_from_slice(data);
+    for segment in elf
+        .program_headers(endian, kernel_content.as_slice())
+        .map_err(|_| anyhow!("Unable to parse program headers of the kernel"))?
+    {
+        if segment.p_type(endian) == elf::PT_LOAD {
+            let start_pos = segment.p_vaddr(endian).into() as usize - kernel_base_address;
+            let end_pos = start_pos + segment.p_memsz(endian).into() as usize;
+            let data = segment
+                .data(endian, kernel_content.as_slice())
+                .map_err(|_| anyhow!("Unable to read segment from kernel"))?;
+            let copy_from_file_end_pos = start_pos + data.len();
+            allocated_slice[start_pos..copy_from_file_end_pos].copy_from_slice(data);
+            allocated_slice[copy_from_file_end_pos..end_pos].fill(0);
+        }
     }
     kernel_file
         .read(allocated_slice)
