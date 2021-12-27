@@ -1,0 +1,5 @@
+[tasks.test]
+clear = true
+command = "echo"
+args = ["There's no test for kernel!"]
+

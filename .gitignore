@@ -1,3 +1,4 @@
 /target
 /disk.img
 /mnt
+/crates/*/target

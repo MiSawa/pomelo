@@ -1,8 +1,0 @@
-[workspace]
-members = ["crates/*"]
-
-# TODO: Remove when it's published to crates.io
-[patch.crates-io]
-uefi = { git = "https://github.com/rust-osdev/uefi-rs.git", rev = "5b92cb3fc4fb82bd69ff3733013ef436eb30180d" }
-uefi-services = { git = "https://github.com/rust-osdev/uefi-rs.git", rev = "5b92cb3fc4fb82bd69ff3733013ef436eb30180d" }
-
