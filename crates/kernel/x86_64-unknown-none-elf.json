@@ -16,7 +16,6 @@
     "ld.lld": [
       "--entry", "kernel_main",
       "-z", "norelro",
-      "-o", "target/debug/kernel.elf",
       "--image-base", "0x100000",
       "--static"
     ]

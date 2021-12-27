@@ -55,7 +55,7 @@ fn actual_main(handle: Handle, mut st: SystemTable<Boot>) -> Result<()> {
         frame_buffer_size: fb.size(),
     };
 
-    let kernel_main = prepare_kernel(st.boot_services(), &mut root, "\\kernel.elf")?;
+    let kernel_main = prepare_kernel(st.boot_services(), &mut root, "\\kernel")?;
     writeln!(st.stdout(), "Loaded kernel").expect("Failed to write to stdout");
 
     let mut memory_map = [0; 16 * 1024];

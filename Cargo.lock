@@ -66,6 +66,14 @@ name = "pomelo-common"
 version = "0.1.0"
 
 [[package]]
+name = "pomelo-kernel"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "pomelo-common",
+]
+
+[[package]]
 name = "proc-macro2"
 version = "1.0.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"

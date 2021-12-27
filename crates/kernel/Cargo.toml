@@ -6,6 +6,10 @@ version = "0.1.0"
 edition = "2021"
 #forced-target = "x86_64-unknown-none-elf"
 
+[[bin]]
+name = 'kernel'
+path = 'src/main.rs'
+
 [dependencies]
 anyhow = { version = "1.0", default-features = false }
 pomelo-common = { path = "../common" }
