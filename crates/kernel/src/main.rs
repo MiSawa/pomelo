@@ -15,11 +15,13 @@ pub extern "C" fn kernel_main(arg: KernelArg) -> ! {
             screen.write(x, y, &Color::WHITE);
         }
     }
-    for x in 100..300 {
-        for y in 100..200 {
+    for x in 0..200 {
+        for y in 0..100 {
             screen.write(x, y, &Color::GREEN);
         }
     }
+    screen.write_char(50, 50, b'a', &Color::BLACK);
+    screen.write_char(58, 50, b'a', &Color::BLACK);
     loop {
         unsafe { asm!("hlt") }
     }

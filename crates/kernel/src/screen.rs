@@ -56,4 +56,35 @@ impl Screen {
         self.buffer[pos + self.g_offset as usize] = color.g;
         self.buffer[pos + self.b_offset as usize] = color.b;
     }
+
+    pub fn write_char(&mut self, x: usize, y: usize, c: u8, color: &Color) {
+        if c != b'a' {
+            return;
+        }
+        const FONT_A: [u8; 16] = [
+            0b00000000, //
+            0b00011000, //    **
+            0b00011000, //    **
+            0b00011000, //    **
+            0b00011000, //    **
+            0b00100100, //   *  *
+            0b00100100, //   *  *
+            0b00100100, //   *  *
+            0b00100100, //   *  *
+            0b01111110, //  ******
+            0b01000010, //  *    *
+            0b01000010, //  *    *
+            0b01000010, //  *    *
+            0b11100111, // ***  ***
+            0b00000000, //
+            0b00000000, //
+        ];
+        for (dy, row) in FONT_A.iter().enumerate() {
+            for dx in 0..8 {
+                if ((row >> (7 - dx)) & 1) != 0 {
+                    self.write(x + dx, y + dy, color);
+                }
+            }
+        }
+    }
 }
