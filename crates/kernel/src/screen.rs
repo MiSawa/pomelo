@@ -1,3 +1,4 @@
+use font8x8::legacy::{BASIC_LEGACY, NOTHING_TO_DISPLAY};
 use pomelo_common::GraphicConfig;
 
 pub struct Color {
@@ -27,6 +28,7 @@ pub struct Screen {
     vertical_resolution: usize,
     stride: usize,
 }
+
 impl Screen {
     pub fn from(config: &GraphicConfig) -> Self {
         Self {
@@ -58,30 +60,14 @@ impl Screen {
     }
 
     pub fn write_char(&mut self, x: usize, y: usize, c: u8, color: &Color) {
-        if c != b'a' {
-            return;
-        }
-        const FONT_A: [u8; 16] = [
-            0b00000000, //
-            0b00011000, //    **
-            0b00011000, //    **
-            0b00011000, //    **
-            0b00011000, //    **
-            0b00100100, //   *  *
-            0b00100100, //   *  *
-            0b00100100, //   *  *
-            0b00100100, //   *  *
-            0b01111110, //  ******
-            0b01000010, //  *    *
-            0b01000010, //  *    *
-            0b01000010, //  *    *
-            0b11100111, // ***  ***
-            0b00000000, //
-            0b00000000, //
-        ];
-        for (dy, row) in FONT_A.iter().enumerate() {
+        let glyph = BASIC_LEGACY.get(c as usize).unwrap_or(&NOTHING_TO_DISPLAY);
+        for (dy, row) in glyph
+            .iter()
+            .flat_map(|r| core::iter::repeat(*r).take(2))
+            .enumerate()
+        {
             for dx in 0..8 {
-                if ((row >> (7 - dx)) & 1) != 0 {
+                if ((row >> dx) & 1) != 0 {
                     self.write(x + dx, y + dy, color);
                 }
             }

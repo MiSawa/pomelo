@@ -12,5 +12,6 @@ path = 'src/main.rs'
 
 [dependencies]
 anyhow = { version = "1.0", default-features = false }
+font8x8 = { version = "0.3.1", default-features = false }
 pomelo-common = { path = "../common" }
 
