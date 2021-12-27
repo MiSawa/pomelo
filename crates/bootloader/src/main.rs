@@ -9,7 +9,7 @@ extern crate alloc;
 use anyhow::{anyhow, bail, Context as _, Error, Result};
 use core::{arch::asm, fmt::Write};
 use object::{Object, ObjectSegment};
-use pomelo_common::KernelArg;
+use pomelo_common::{GraphicConfig, KernelArg, PixelFormat};
 use uefi::{
     prelude::*,
     proto::{
@@ -41,29 +41,17 @@ fn actual_main(handle: Handle, mut st: SystemTable<Boot>) -> Result<()> {
     write_memory_map_file(st.boot_services(), &mut root, "\\memmap")?;
     writeln!(st.stdout(), "Wrote memory map file").expect("Failed to write to stdout");
 
-    let go = st
-        .boot_services()
-        .locate_protocol::<GraphicsOutput>()
-        .expect_success("Unable to get graphics output");
-    let go = unsafe { &mut *go.get() };
-    let mut fb = go.frame_buffer();
-    for i in 0..fb.size() {
-        unsafe { fb.write_byte(i, 255) };
-    }
-    let arg = KernelArg {
-        frame_buffer_base: fb.as_mut_ptr(),
-        frame_buffer_size: fb.size(),
-    };
-
     let kernel_main = prepare_kernel(st.boot_services(), &mut root, "\\kernel")?;
     writeln!(st.stdout(), "Loaded kernel").expect("Failed to write to stdout");
+
+    let graphic_config = read_graphic_config(&mut st)?;
 
     let mut memory_map = [0; 16 * 1024];
     let (_st, _) = st
         .exit_boot_services(handle, &mut memory_map)
         .expect_success("Failed to exit boot services");
 
-    kernel_main(arg);
+    kernel_main(KernelArg { graphic_config });
 
     #[allow(clippy::empty_loop)]
     loop {
@@ -75,6 +63,44 @@ fn open_root_dir(handle: Handle, bs: &BootServices) -> uefi::Result<Directory> {
     let fs = bs.get_image_file_system(handle).warning_as_error()?;
     let fs = unsafe { &mut *fs.interface.get() };
     fs.open_volume()
+}
+
+fn read_graphic_config(st: &mut SystemTable<Boot>) -> Result<GraphicConfig> {
+    let go = st
+        .boot_services()
+        .locate_protocol::<GraphicsOutput>()
+        .warning_as_error()
+        .map_err(|_| anyhow!("Unable to get graphics output"))?;
+    let go = unsafe { &mut *go.get() };
+
+    let mode = go.modes().find_map(|mode| {
+        let mode = mode.expect("Unable to get mode");
+        let format = mode.info().pixel_format();
+        match format {
+            uefi::proto::console::gop::PixelFormat::Rgb => Option::Some((mode, PixelFormat::Rgb)),
+            uefi::proto::console::gop::PixelFormat::Bgr => Option::Some((mode, PixelFormat::Bgr)),
+            _ => Option::None,
+        }
+    });
+    let (mode, pixel_format) =
+        mode.ok_or_else(|| anyhow!("Unable to find supported pixel format (RGB | BGR)"))?;
+    go.set_mode(&mode)
+        .warning_as_error()
+        .map_err(|_| anyhow!("Unable to set mode"))?;
+    let info = mode.info();
+    let (horisontal_resolution, vertical_resolution) = info.resolution();
+    let stride = info.stride();
+
+    let mut fb = go.frame_buffer();
+    let config = GraphicConfig {
+        frame_buffer_base: fb.as_mut_ptr(),
+        frame_buffer_size: fb.size(),
+        pixel_format,
+        horisontal_resolution,
+        vertical_resolution,
+        stride,
+    };
+    Ok(config)
 }
 
 fn prepare_kernel(

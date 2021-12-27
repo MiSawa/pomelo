@@ -4,12 +4,21 @@
 use core::arch::asm;
 use pomelo_common::KernelArg;
 
+mod screen;
+use screen::{Color, Screen};
+
 #[no_mangle]
 pub extern "C" fn kernel_main(arg: KernelArg) -> ! {
-    let frame_buffer =
-        unsafe { core::slice::from_raw_parts_mut(arg.frame_buffer_base, arg.frame_buffer_size) };
-    for i in 0..arg.frame_buffer_size {
-        frame_buffer[i] = (i % 255) as u8;
+    let mut screen = Screen::from(&arg.graphic_config);
+    for x in 0..screen.width() {
+        for y in 0..screen.height() {
+            screen.write(x, y, &Color::WHITE);
+        }
+    }
+    for x in 100..300 {
+        for y in 100..200 {
+            screen.write(x, y, &Color::GREEN);
+        }
     }
     loop {
         unsafe { asm!("hlt") }
