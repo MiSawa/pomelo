@@ -1,25 +1,21 @@
-use font8x8::legacy::{BASIC_LEGACY, NOTHING_TO_DISPLAY};
 use pomelo_common::GraphicConfig;
+use spin::Mutex;
 
-pub struct Color {
-    r: u8,
-    g: u8,
-    b: u8,
-}
-#[allow(unused)]
-impl Color {
-    pub const BLACK: Color = Color { r: 0, g: 0, b: 0 };
-    pub const WHITE: Color = Color {
-        r: 255,
-        g: 255,
-        b: 255,
-    };
-    pub const RED: Color = Color { r: 255, g: 0, b: 0 };
-    pub const GREEN: Color = Color { r: 0, g: 255, b: 0 };
-    pub const BLUE: Color = Color { r: 0, g: 0, b: 255 };
+use crate::canvas::{Canvas, Color, Coordinate, PaintError, Point, Result};
+
+lazy_static! {
+    static ref SCREEN: Mutex<Option<ScreenRaw>> = Mutex::new(Option::None);
 }
 
-pub struct Screen {
+pub fn initialize(graphic_config: &GraphicConfig) {
+    SCREEN.lock().replace(ScreenRaw::from(graphic_config));
+}
+
+pub fn screen() -> Screen {
+    Screen()
+}
+
+struct ScreenRaw {
     buffer: &'static mut [u8],
     r_offset: u8,
     g_offset: u8,
@@ -29,7 +25,7 @@ pub struct Screen {
     stride: usize,
 }
 
-impl Screen {
+impl ScreenRaw {
     pub fn from(config: &GraphicConfig) -> Self {
         Self {
             buffer: unsafe {
@@ -43,73 +39,95 @@ impl Screen {
             stride: config.stride,
         }
     }
-
-    pub fn width(&self) -> usize {
-        self.horisontal_resolution
+}
+impl Canvas for ScreenRaw {
+    fn width(&self) -> Coordinate {
+        self.horisontal_resolution as Coordinate
     }
 
-    pub fn height(&self) -> usize {
-        self.vertical_resolution
+    fn height(&self) -> Coordinate {
+        self.vertical_resolution as Coordinate
     }
 
-    pub fn write(&mut self, x: usize, y: usize, color: &Color) {
-        let pos = 4 * (self.stride * y + x);
+    fn draw_pixel(&mut self, p: Point, color: Color) -> Result<()> {
+        if p.x < 0 || p.x >= self.width() || p.y < 0 || p.y >= self.height() {
+            return Err(PaintError::OutOfCanvas);
+        }
+        let pos = 4 * (self.stride * (p.y as usize) + (p.x as usize));
         self.buffer[pos + self.r_offset as usize] = color.r;
         self.buffer[pos + self.g_offset as usize] = color.g;
         self.buffer[pos + self.b_offset as usize] = color.b;
+        Ok(())
+    }
+}
+
+pub struct ScreenLock<'a> {
+    lock: spin::mutex::MutexGuard<'a, Option<ScreenRaw>>,
+}
+impl<'a> ScreenLock<'a> {
+    fn new() -> Self {
+        let lock = SCREEN.lock();
+        Self { lock }
     }
 
-    pub fn write_char(&mut self, x: usize, y: usize, color: &Color, c: u8) {
-        let glyph = BASIC_LEGACY.get(c as usize).unwrap_or(&NOTHING_TO_DISPLAY);
-        for (dy, row) in glyph
-            .iter()
-            .flat_map(|r| core::iter::repeat(*r).take(2))
-            .enumerate()
-        {
-            for dx in 0..8 {
-                if ((row >> dx) & 1) != 0 {
-                    self.write(x + dx, y + dy, color);
-                }
-            }
-        }
+    fn unwrap(&self) -> &ScreenRaw {
+        self.lock.as_ref().unwrap()
     }
 
-    pub fn write_string(&mut self, x: usize, y: usize, color: &Color, s: &str) {
-        for (i, c) in s.bytes().enumerate() {
-            self.write_char(x + i * 8, y, color, c);
-        }
+    fn unwrap_mut(&mut self) -> &mut ScreenRaw {
+        self.lock.as_mut().unwrap()
+    }
+}
+
+pub struct Screen();
+impl Screen {
+    pub fn lock(&self) -> ScreenLock {
+        ScreenLock::new()
+    }
+}
+
+impl<'a> Canvas for ScreenLock<'a> {
+    fn width(&self) -> Coordinate {
+        self.unwrap().width()
     }
 
-    pub fn write_fmt(
+    fn height(&self) -> Coordinate {
+        self.unwrap().height()
+    }
+
+    fn draw_pixel(&mut self, p: Point, color: Color) -> Result<()> {
+        self.unwrap_mut().draw_pixel(p, color)
+    }
+}
+
+impl Canvas for Screen {
+    fn width(&self) -> Coordinate {
+        self.lock().width()
+    }
+
+    fn height(&self) -> Coordinate {
+        self.lock().height()
+    }
+
+    fn draw_pixel(&mut self, p: Point, color: Color) -> Result<()> {
+        self.lock().draw_pixel(p, color)
+    }
+
+    fn draw_char(&mut self, p: Point, color: Color, c: char) -> Result<Coordinate> {
+        self.lock().draw_char(p, color, c)
+    }
+
+    fn draw_string(&mut self, p: Point, color: Color, s: &str) -> Result<Coordinate> {
+        self.lock().draw_string(p, color, s)
+    }
+
+    fn draw_fmt(
         &mut self,
-        x: usize,
-        y: usize,
-        color: &Color,
+        p: Point,
+        color: Color,
         buffer: &mut [u8],
         args: core::fmt::Arguments,
-    ) -> Result<(), core::fmt::Error> {
-        struct WriteBuffer<'a> {
-            buffer: &'a mut [u8],
-            used: usize,
-        }
-        impl<'a> core::fmt::Write for WriteBuffer<'a> {
-            fn write_str(&mut self, s: &str) -> core::fmt::Result {
-                let to_write = s.as_bytes();
-                if self.used + to_write.len() > self.buffer.len() {
-                    Err(core::fmt::Error)
-                } else {
-                    self.buffer[self.used..(self.used + to_write.len())].copy_from_slice(to_write);
-                    self.used += to_write.len();
-                    Ok(())
-                }
-            }
-        }
-        let mut w = WriteBuffer { buffer, used: 0 };
-        core::fmt::write(&mut w, args)?;
-        let b = &w.buffer[..w.used];
-        // SAFETY: This is a concatenation of bytes of valid strs.
-        let s = unsafe { core::str::from_utf8_unchecked(&b) };
-        self.write_string(x, y, color, &s);
-        Ok(())
+    ) -> Result<Coordinate> {
+        self.lock().draw_fmt(p, color, buffer, args)
     }
 }
