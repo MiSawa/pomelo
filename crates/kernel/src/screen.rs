@@ -59,7 +59,7 @@ impl Screen {
         self.buffer[pos + self.b_offset as usize] = color.b;
     }
 
-    pub fn write_char(&mut self, x: usize, y: usize, c: u8, color: &Color) {
+    pub fn write_char(&mut self, x: usize, y: usize, color: &Color, c: u8) {
         let glyph = BASIC_LEGACY.get(c as usize).unwrap_or(&NOTHING_TO_DISPLAY);
         for (dy, row) in glyph
             .iter()
@@ -74,9 +74,42 @@ impl Screen {
         }
     }
 
-    pub fn write_string(&mut self, x: usize, y: usize, s: &str, color: &Color) {
+    pub fn write_string(&mut self, x: usize, y: usize, color: &Color, s: &str) {
         for (i, c) in s.bytes().enumerate() {
-            self.write_char(x + i * 8, y, c, color);
+            self.write_char(x + i * 8, y, color, c);
         }
+    }
+
+    pub fn write_fmt(
+        &mut self,
+        x: usize,
+        y: usize,
+        color: &Color,
+        buffer: &mut [u8],
+        args: core::fmt::Arguments,
+    ) -> Result<(), core::fmt::Error> {
+        struct WriteBuffer<'a> {
+            buffer: &'a mut [u8],
+            used: usize,
+        }
+        impl<'a> core::fmt::Write for WriteBuffer<'a> {
+            fn write_str(&mut self, s: &str) -> core::fmt::Result {
+                let to_write = s.as_bytes();
+                if self.used + to_write.len() > self.buffer.len() {
+                    Err(core::fmt::Error)
+                } else {
+                    self.buffer[self.used..(self.used + to_write.len())].copy_from_slice(to_write);
+                    self.used += to_write.len();
+                    Ok(())
+                }
+            }
+        }
+        let mut w = WriteBuffer { buffer, used: 0 };
+        core::fmt::write(&mut w, args)?;
+        let b = &w.buffer[..w.used];
+        // SAFETY: This is a concatenation of bytes of valid strs.
+        let s = unsafe { core::str::from_utf8_unchecked(&b) };
+        self.write_string(x, y, color, &s);
+        Ok(())
     }
 }

@@ -1,10 +1,10 @@
 #![no_main]
 #![no_std]
 
-use core::arch::asm;
-use pomelo_common::KernelArg;
-
 mod screen;
+
+use core::{arch::asm, format_args};
+use pomelo_common::KernelArg;
 use screen::{Color, Screen};
 
 #[no_mangle]
@@ -21,9 +21,18 @@ pub extern "C" fn kernel_main(arg: KernelArg) -> ! {
         }
     }
     for (i, c) in (b'!'..=b'~').enumerate() {
-        screen.write_char(i * 8, 50, c, &Color::BLACK);
+        screen.write_char(i * 8, 50, &Color::BLACK, c);
     }
-    screen.write_string(0, 66, "Hello, world!", &Color::BLUE);
+    screen.write_string(0, 66, &Color::BLUE, "Hello, world!");
+    screen
+        .write_fmt(
+            0,
+            82,
+            &Color::BLACK,
+            &mut [0; 32],
+            format_args!("1 + 2 = {}", 1 + 2),
+        )
+        .expect("???");
     loop {
         unsafe { asm!("hlt") }
     }
