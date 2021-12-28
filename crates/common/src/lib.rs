@@ -9,8 +9,8 @@ pub enum PixelFormat {
 impl PixelFormat {
     pub fn r_offset(&self) -> u8 {
         match self {
-            PixelFormat::Rgb => 2,
-            PixelFormat::Bgr => 0,
+            PixelFormat::Rgb => 0,
+            PixelFormat::Bgr => 2,
         }
     }
     pub fn g_offset(&self) -> u8 {
@@ -21,8 +21,8 @@ impl PixelFormat {
     }
     pub fn b_offset(&self) -> u8 {
         match self {
-            PixelFormat::Rgb => 0,
-            PixelFormat::Bgr => 2,
+            PixelFormat::Rgb => 2,
+            PixelFormat::Bgr => 0,
         }
     }
 }

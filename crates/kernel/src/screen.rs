@@ -73,4 +73,10 @@ impl Screen {
             }
         }
     }
+
+    pub fn write_string(&mut self, x: usize, y: usize, s: &str, color: &Color) {
+        for (i, c) in s.bytes().enumerate() {
+            self.write_char(x + i * 8, y, c, color);
+        }
+    }
 }

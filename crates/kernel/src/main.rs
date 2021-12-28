@@ -23,6 +23,7 @@ pub extern "C" fn kernel_main(arg: KernelArg) -> ! {
     for (i, c) in (b'!'..=b'~').enumerate() {
         screen.write_char(i * 8, 50, c, &Color::BLACK);
     }
+    screen.write_string(0, 66, "Hello, world!", &Color::BLUE);
     loop {
         unsafe { asm!("hlt") }
     }
