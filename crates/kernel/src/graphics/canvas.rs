@@ -1,48 +1,12 @@
 use snafu::{ResultExt as _, Snafu};
 
-pub type Coordinate = i32;
-const GLYPH_HEIGHT: Coordinate = 16;
-const GLYPH_WIDTH: Coordinate = 8;
+use crate::graphics::{Color, ICoordinate, Point, Rectangle, Size, UCoordinate};
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Default)]
-pub struct Point {
-    pub x: Coordinate,
-    pub y: Coordinate,
-}
-
-impl Point {
-    pub fn new(x: Coordinate, y: Coordinate) -> Self {
-        Self { x, y }
-    }
-}
-
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Default)]
-pub struct Color {
-    pub r: u8,
-    pub g: u8,
-    pub b: u8,
-}
-#[allow(unused)]
-impl Color {
-    pub const BLACK: Color = Color { r: 0, g: 0, b: 0 };
-    pub const WHITE: Color = Color {
-        r: 255,
-        g: 255,
-        b: 255,
-    };
-    pub const RED: Color = Color { r: 255, g: 0, b: 0 };
-    pub const GREEN: Color = Color { r: 0, g: 255, b: 0 };
-    pub const BLUE: Color = Color { r: 0, g: 0, b: 255 };
-
-    pub fn new(r: u8, g: u8, b: u8) -> Self {
-        Self { r, g, b }
-    }
-}
+pub const GLYPH_HEIGHT: ICoordinate = 16;
+pub const GLYPH_WIDTH: ICoordinate = 8;
 
 #[derive(Debug, Snafu)]
 pub enum PaintError {
-    #[snafu(display("Out of canvas"))]
-    OutOfCanvas,
     #[snafu(display("Unable to format: {}", source))]
     FormatError { source: core::fmt::Error },
     #[snafu(display("Something went wrong: {}", message))]
@@ -51,11 +15,27 @@ pub enum PaintError {
 pub type Result<T> = ::core::result::Result<T, PaintError>;
 
 pub trait Canvas {
-    fn width(&self) -> Coordinate;
-    fn height(&self) -> Coordinate;
-    fn draw_pixel(&mut self, p: Point, color: Color) -> Result<()>;
+    fn size(&self) -> Size;
+    fn width(&self) -> UCoordinate {
+        self.size().x
+    }
+    fn height(&self) -> UCoordinate {
+        self.size().y
+    }
+    fn bounding_box(&self) -> Rectangle {
+        Rectangle::new(Point::zero(), self.size())
+    }
 
-    fn draw_char(&mut self, p: Point, color: Color, c: char) -> Result<Coordinate> {
+    fn draw_pixel(&mut self, color: Color, p: Point) -> Result<()>;
+    fn fill_rectangle(&mut self, color: Color, rectangle: &Rectangle) -> Result<()> {
+        for y in rectangle.ys() {
+            for x in rectangle.xs() {
+                self.draw_pixel(color, Point::new(x, y))?
+            }
+        }
+        Ok(())
+    }
+    fn draw_char(&mut self, color: Color, p: Point, c: char) -> Result<ICoordinate> {
         use font8x8::legacy::{BASIC_LEGACY, NOTHING_TO_DISPLAY};
         let glyph = BASIC_LEGACY.get(c as usize).unwrap_or(&NOTHING_TO_DISPLAY);
         for (dy, row) in glyph
@@ -65,26 +45,26 @@ pub trait Canvas {
         {
             for dx in 0..8 {
                 if ((row >> dx) & 1) != 0 {
-                    self.draw_pixel(Point::new(p.x + dx, p.y + dy as Coordinate), color)?;
+                    self.draw_pixel(color, Point::new(p.x + dx, p.y + dy as ICoordinate))?;
                 }
             }
         }
         Ok(GLYPH_WIDTH)
     }
-    fn draw_string(&mut self, p: Point, color: Color, s: &str) -> Result<Coordinate> {
+    fn draw_string(&mut self, color: Color, p: Point, s: &str) -> Result<ICoordinate> {
         let mut dx = 0;
         for c in s.chars() {
-            dx += self.draw_char(Point::new(p.x + dx, p.y), color, c)?;
+            dx += self.draw_char(color, Point::new(p.x + dx, p.y), c)?;
         }
         Ok(dx)
     }
     fn draw_fmt(
         &mut self,
-        p: Point,
         color: Color,
+        p: Point,
         buffer: &mut [u8],
         args: core::fmt::Arguments,
-    ) -> Result<Coordinate> {
+    ) -> Result<ICoordinate> {
         struct WriteBuffer<'a> {
             buffer: &'a mut [u8],
             used: usize,
@@ -106,6 +86,6 @@ pub trait Canvas {
         let b = &w.buffer[..w.used];
         // SAFETY: This is a concatenation of bytes of valid strs.
         let s = unsafe { core::str::from_utf8_unchecked(b) };
-        self.draw_string(p, color, s)
+        self.draw_string(color, p, s)
     }
 }

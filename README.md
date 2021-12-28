@@ -9,7 +9,7 @@ You need `cargo-make` to build this OS.
 
 ```sh
 cargo install --force cargo-make
-cagro make build
+cagro make build-release
 ```
 
 Instead, you can run `cargo build` on `crates/{bootloader,kernel}`.
@@ -27,5 +27,7 @@ You can now boot the OS with the task `qemu`
 
 ```sh
 cargo make qemu
+# or
+cargo make qemu-release
 ```
 

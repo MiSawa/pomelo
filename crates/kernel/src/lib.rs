@@ -5,5 +5,4 @@
 #[macro_use]
 extern crate lazy_static;
 
-pub mod canvas;
-pub mod screen;
+pub mod graphics;

@@ -4,43 +4,49 @@
 
 use core::{arch::asm, format_args};
 use pomelo_common::KernelArg;
-use pomelo_kernel::{
-    canvas::{Canvas, Color, Coordinate, Point},
-    screen,
+use pomelo_kernel::graphics::{
+    canvas::Canvas,
+    console::Console,
+    screen::{self, screen},
+    Color, ICoordinate, Point, Rectangle, Size,
 };
 
 #[no_mangle]
 pub extern "C" fn kernel_main(arg: KernelArg) -> ! {
     // SCREEN.write().replace(Screen::from(&arg.graphic_config));
     screen::initialize(&arg.graphic_config);
-    let screen = screen::screen();
+    let screen = screen();
     let mut screen = screen.lock();
-    for y in 0..screen.height() {
-        for x in 0..screen.width() {
-            screen.draw_pixel(Point::new(x, y), Color::WHITE).ok();
-        }
-    }
-    for x in 0..200 {
-        for y in 0..100 {
-            screen.draw_pixel(Point::new(x, y), Color::GREEN).ok();
-        }
-    }
+    screen
+        .fill_rectangle(Color::WHITE, &screen.bounding_box())
+        .ok();
+    screen
+        .fill_rectangle(
+            Color::GREEN,
+            &Rectangle::new(Point::zero(), Size::new(200, 100)),
+        )
+        .ok();
     for (i, c) in ('!'..='~').enumerate() {
         screen
-            .draw_char(Point::new((i * 8) as Coordinate, 50), Color::BLACK, c)
+            .draw_char(Color::BLACK, Point::new((i * 8) as ICoordinate, 50), c)
             .ok();
     }
     screen
-        .draw_string(Point::new(0, 66), Color::BLUE, "Hello, world!")
+        .draw_string(Color::BLUE, Point::new(0, 66), "Hello, world!")
         .ok();
     screen
         .draw_fmt(
-            Point::new(0, 82),
             Color::BLACK,
+            Point::new(0, 82),
             &mut [0; 32],
             format_args!("1 + 2 = {}", 1 + 2),
         )
         .ok();
+
+    let mut console = Console::new(screen, Color::BLACK, Color::WHITE);
+    for i in 0..27 {
+        core::fmt::write(&mut console, format_args!("print {}\n", i)).ok();
+    }
     loop {
         unsafe { asm!("hlt") }
     }

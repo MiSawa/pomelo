@@ -11,6 +11,8 @@ name = 'kernel'
 path = 'src/main.rs'
 
 [dependencies]
+arrayvec = { version = "0.7.2", default-features = false }
+delegate = "0.6.1"
 font8x8 = { version = "0.3.1", default-features = false }
 lazy_static = { version = "1.4.0", features = ["spin_no_std"] }
 pomelo-common = { path = "../common" }

@@ -1,8 +1,10 @@
 [env]
 MIKAN_DEV_PATH = './mikanos-build/devenv'
 # EFI_FILE = "${CARGO_MAKE_CRATE_CUSTOM_TRIPLE_TARGET_DIRECTORY}/debug/pomelo-bootloader.efi"
-EFI_FILE = "./target/x86_64-unknown-uefi/debug/pomelo-bootloader.efi"
-KERNEL_FILE = "./target/x86_64-unknown-none-elf/debug/kernel"
+DEBUG_EFI_FILE = "./target/x86_64-unknown-uefi/debug/pomelo-bootloader.efi"
+DEBUG_KERNEL_FILE = "./target/x86_64-unknown-none-elf/debug/kernel"
+RELEASE_EFI_FILE = "./target/x86_64-unknown-uefi/release/pomelo-bootloader.efi"
+RELEASE_KERNEL_FILE = "./target/x86_64-unknown-none-elf/release/kernel"
 
 [config]
 default_to_workspace = false
@@ -14,13 +16,27 @@ dependencies = [
     { name = 'build', path = 'crates/kernel' },
 ]
 
+[tasks.build-release]
+dependencies = [
+    { name = 'build-release', path = 'crates/bootloader' },
+    { name = 'build-release', path = 'crates/kernel' },
+]
+
 [tasks.qemu]
 dependencies = [
     { name = 'build', path = 'crates/bootloader' },
     { name = 'build', path = 'crates/kernel' },
 ]
 command = "${MIKAN_DEV_PATH}/run_qemu.sh"
-args = ["${EFI_FILE}", "${KERNEL_FILE}"]
+args = ["${DEBUG_EFI_FILE}", "${DEBUG_KERNEL_FILE}"]
+
+[tasks.qemu-release]
+dependencies = [
+    { name = 'build', path = 'crates/bootloader' },
+    { name = 'build', path = 'crates/kernel' },
+]
+command = "${MIKAN_DEV_PATH}/run_qemu.sh"
+args = ["${RELEASE_EFI_FILE}", "${RELEASE_KERNEL_FILE}"]
 
 [tasks.clean]
 dependencies = [
