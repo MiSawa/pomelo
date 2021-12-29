@@ -28,7 +28,7 @@ pub fn initialize(graphic_config: &GraphicConfig) {
 }
 
 pub fn global_console() -> impl core::fmt::Write {
-    struct GlobalConsoleWrite();
+    struct GlobalConsoleWrite;
     impl core::fmt::Write for GlobalConsoleWrite {
         fn write_str(&mut self, s: &str) -> core::fmt::Result {
             let mut console = GLOBAL_CONSOLE.lock();
@@ -38,7 +38,7 @@ pub fn global_console() -> impl core::fmt::Write {
             console.write_str(s)
         }
     }
-    GlobalConsoleWrite()
+    GlobalConsoleWrite
 }
 
 pub struct Console<C: Canvas> {

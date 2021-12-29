@@ -20,4 +20,5 @@ pomelo-common = { path = "../common" }
 snafu = { version = "0.6.10", default-features = false }
 spin = "0.9.2"
 mikanos_usb = { git = "https://github.com/gifnksm/sabios.git", rev = "0f952f66a5665dbe4f6c5756dbb8537a0e1b9181" }
+log = "0.4.14"
 

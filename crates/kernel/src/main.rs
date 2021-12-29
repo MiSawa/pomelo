@@ -2,13 +2,16 @@
 #![no_std]
 #![feature(never_type)]
 
+use log::{error, info, LevelFilter};
 use pomelo_common::KernelArg;
 
+#[cfg(not(test))]
+use pomelo_kernel::x86_64;
 use pomelo_kernel::{
     graphics::{canvas::Canvas, console, screen, Color, Rectangle, Size, DESKTOP_BG_COLOR},
-    mouse, pci,
+    logger, mouse, pci,
     prelude::*,
-    x86_64, xhci,
+    xhci,
 };
 
 #[no_mangle]
@@ -16,11 +19,13 @@ pub extern "C" fn kernel_main(arg: KernelArg) -> ! {
     main(arg).expect("What happened???")
 }
 
-fn initialize(arg: &KernelArg) {
+fn initialize(arg: &KernelArg) -> Result<()> {
     screen::initialize(&arg.graphic_config);
+    logger::initialize(LevelFilter::Debug)?;
     write_desktop();
     console::initialize(&arg.graphic_config);
     mouse::initialize(&arg.graphic_config);
+    Ok(())
 }
 
 fn write_desktop() {
@@ -51,7 +56,7 @@ fn write_desktop() {
 }
 
 fn main(arg: KernelArg) -> Result<!> {
-    initialize(&arg);
+    initialize(&arg)?;
     // write_desktop();
     println!("Welcome to Pomelo OS");
     let xhc = pci::scan_devices()
@@ -66,11 +71,11 @@ fn main(arg: KernelArg) -> Result<!> {
         })
         .expect("No xHCI was found");
     let xhc = xhci::initialize(&xhc);
-    println!("Initialized xhci");
+    info!("Initialized xhci");
 
     loop {
         if let Err(e) = xhc.process_event() {
-            println!("Something went wrong: {}", e.0);
+            error!("Something went wrong: {}", e.0);
         }
     }
 }

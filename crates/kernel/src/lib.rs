@@ -7,6 +7,7 @@ extern crate lazy_static;
 
 mod cxx_support;
 pub mod graphics;
+pub mod logger;
 pub mod mouse;
 pub mod pci;
 pub mod x86_64;
@@ -36,6 +37,13 @@ pub mod prelude {
     };
 
     pub type Result<T> = ::core::result::Result<T, Error>;
-    #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-    pub enum Error {}
+    #[derive(Debug)]
+    pub enum Error {
+        LogInitializeError(log::SetLoggerError),
+    }
+    impl From<log::SetLoggerError> for Error {
+        fn from(e: log::SetLoggerError) -> Self {
+            Self::LogInitializeError(e)
+        }
+    }
 }
