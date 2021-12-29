@@ -6,3 +6,5 @@
 extern crate lazy_static;
 
 pub mod graphics;
+pub mod pci;
+pub mod x86_64;

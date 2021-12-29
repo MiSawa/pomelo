@@ -70,15 +70,22 @@ fn read_graphic_config(st: &mut SystemTable<Boot>) -> Result<GraphicConfig> {
         .map_err(|_| anyhow!("Unable to get graphics output"))?;
     let go = unsafe { &mut *go.get() };
 
-    let mode = go.modes().find_map(|mode| {
-        let mode = mode.expect("Unable to get mode");
-        let format = mode.info().pixel_format();
-        match format {
-            uefi::proto::console::gop::PixelFormat::Rgb => Option::Some((mode, PixelFormat::Rgb)),
-            uefi::proto::console::gop::PixelFormat::Bgr => Option::Some((mode, PixelFormat::Bgr)),
-            _ => Option::None,
-        }
-    });
+    let mode = go
+        .modes()
+        .filter_map(|mode| {
+            let mode = mode.expect("Unable to get mode");
+            let format = mode.info().pixel_format();
+            match format {
+                uefi::proto::console::gop::PixelFormat::Rgb => {
+                    Option::Some((mode, PixelFormat::Rgb))
+                }
+                uefi::proto::console::gop::PixelFormat::Bgr => {
+                    Option::Some((mode, PixelFormat::Bgr))
+                }
+                _ => Option::None,
+            }
+        })
+        .min_by_key(|(mode, _)| (mode.info().resolution().0 as isize - 1440).abs());
     let (mode, pixel_format) =
         mode.ok_or_else(|| anyhow!("Unable to find supported pixel format (RGB | BGR)"))?;
     go.set_mode(&mode)

@@ -2,10 +2,12 @@
 #![no_std]
 #![feature(once_cell)]
 
-use core::arch::asm;
 use pomelo_common::KernelArg;
-use pomelo_kernel::graphics::{
-    self, canvas::Canvas, console::Console, screen, Color, ICoordinate, Point, Rectangle, Size,
+use pomelo_kernel::{
+    graphics::{
+        self, canvas::Canvas, console::Console, screen, Color, ICoordinate, Point, Rectangle, Size,
+    },
+    pci, x86_64,
 };
 
 #[no_mangle]
@@ -43,20 +45,26 @@ pub extern "C" fn kernel_main(arg: KernelArg) -> ! {
     );
 
     let mut console = Console::new(screen, DESKTOP_FG_COLOR, DESKTOP_BG_COLOR);
-    console.write_string("Welcome to Pomelo OS!");
+    console.write_string("Welcome to Pomelo OS!\n");
     // core::fmt::write(&mut console, format_args!("Wellcome to Pomelo OS!\n")).ok();
+    for device in pci::scan_devices() {
+        for function in device.scan_functions() {
+            core::fmt::write(&mut console, format_args!("{:?}\n", function)).ok();
+        }
+    }
 
     let mut screen = screen::screen();
     graphics::mouse::render_mouse_cursor(&mut screen, Point::new(300, 300));
     loop {
-        unsafe { asm!("hlt") }
+        x86_64::hlt()
     }
 }
 
+#[cfg(not(test))]
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
     #[allow(clippy::empty_loop)]
     loop {
-        unsafe { asm!("hlt") }
+        x86_64::hlt()
     }
 }
