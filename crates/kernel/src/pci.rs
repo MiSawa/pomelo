@@ -1,22 +1,16 @@
-use crate::x86_64;
+// use crate::x86_64;
 use derive_getters::Getters;
+use x86_64::instructions::port::{PortReadOnly, PortWriteOnly};
 
 const CONFIG_ADDRESS: u16 = 0x0CF8;
 const CONFIG_DATA: u16 = 0x0CFC;
 
-// fn write_address(address: u32) {
-//     x86_64::io_out32(CONFIG_ADDRESS, address)
-// }
-// fn write_data(value: u32) {
-//     x86_64::io_out32(CONFIG_DATA, value)
-// }
-// fn read_data() -> u32 {
-//     x86_64::io_in32(CONFIG_DATA)
-// }
 fn read_pci_config(address: u32) -> u32 {
+    let mut addr = PortWriteOnly::new(CONFIG_ADDRESS);
+    let mut data = PortReadOnly::new(CONFIG_DATA);
     unsafe {
-        x86_64::io_out32(CONFIG_ADDRESS, address);
-        x86_64::io_in32(CONFIG_DATA)
+        addr.write(address);
+        data.read()
     }
 }
 fn make_address(bus: u8, device: u8, function: u8, register_address: u8) -> u32 {

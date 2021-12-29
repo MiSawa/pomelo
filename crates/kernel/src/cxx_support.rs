@@ -81,7 +81,7 @@ extern "C" fn sbrk(_increment: isize) -> *const u8 {
 #[no_mangle]
 extern "C" fn _exit() -> ! {
     loop {
-        crate::x86_64::hlt();
+        x86_64::instructions::hlt();
     }
 }
 

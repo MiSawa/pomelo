@@ -3,7 +3,7 @@ use mikanos_usb;
 use crate::{mouse, pci};
 
 /// Assumes the given func is a xHC, or panic.
-pub fn initialize(func: &pci::PCIFunction) -> &mut mikanos_usb::xhci::Controller {
+pub fn initialize(func: &pci::PCIFunction) -> &'static mut mikanos_usb::xhci::Controller {
     assert!(matches!(
         func.class(),
         pci::PCIClass::SerialBusController(pci::SerialBusSubclass::USBController(

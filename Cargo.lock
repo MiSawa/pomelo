@@ -635,6 +635,7 @@ dependencies = [
  "pomelo-common",
  "snafu",
  "spin 0.9.2",
+ "x86_64",
 ]
 
 [[package]]

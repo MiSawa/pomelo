@@ -1,12 +1,12 @@
 #![no_main]
 #![no_std]
 #![feature(never_type)]
+#![feature(abi_x86_interrupt)]
 
 use log::{error, info, LevelFilter};
 use pomelo_common::KernelArg;
+use x86_64::structures::idt::InterruptStackFrame;
 
-#[cfg(not(test))]
-use pomelo_kernel::x86_64;
 use pomelo_kernel::{
     graphics::{canvas::Canvas, console, screen, Color, Rectangle, Size, DESKTOP_BG_COLOR},
     logger, mouse, pci,
@@ -80,12 +80,16 @@ fn main(arg: KernelArg) -> Result<!> {
     }
 }
 
+extern "x86-interrupt" fn interrupt_handler_xhci(_stack_frame: InterruptStackFrame) {
+    print!(".");
+}
+
 #[cfg(not(test))]
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
     println!("{}", info);
     #[allow(clippy::empty_loop)]
     loop {
-        x86_64::hlt()
+        x86_64::instructions::hlt()
     }
 }

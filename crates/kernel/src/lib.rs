@@ -10,7 +10,6 @@ pub mod graphics;
 pub mod logger;
 pub mod mouse;
 pub mod pci;
-pub mod x86_64;
 pub mod xhci;
 
 #[macro_export]
