@@ -2,10 +2,7 @@ use delegate::delegate;
 use pomelo_common::GraphicConfig;
 use spin::Mutex;
 
-use crate::graphics::{
-    canvas::{Canvas, Result},
-    Color, ICoordinate, Point, Rectangle, Size, UCoordinate,
-};
+use crate::graphics::{canvas::Canvas, Color, ICoordinate, Point, Rectangle, Size, UCoordinate};
 
 lazy_static! {
     static ref SCREEN: Mutex<Option<ScreenRaw>> = Mutex::new(Option::None);
@@ -57,19 +54,18 @@ impl Canvas for ScreenRaw {
         )
     }
 
-    fn draw_pixel(&mut self, color: Color, p: Point) -> Result<()> {
+    fn draw_pixel(&mut self, color: Color, p: Point) {
         let size = self.size();
         if p.x < 0 || p.x >= (size.x as ICoordinate) || p.y < 0 || p.y >= (size.y as ICoordinate) {
-            return Ok(());
+            return;
         }
         let offset = self.offset_of_pixel(p);
         self.buffer[offset + self.r_offset as usize] = color.r;
         self.buffer[offset + self.g_offset as usize] = color.g;
         self.buffer[offset + self.b_offset as usize] = color.b;
-        Ok(())
     }
 
-    fn fill_rectangle(&mut self, color: Color, rectangle: &Rectangle) -> Result<()> {
+    fn fill_rectangle(&mut self, color: Color, rectangle: &Rectangle) {
         let rectangle = rectangle.intersection(&self.bounding_box());
         let mut pattern = [0; 4];
         pattern[self.r_offset as usize] = color.r;
@@ -85,7 +81,6 @@ impl Canvas for ScreenRaw {
             s += self.stride * 4;
             t += self.stride * 4;
         }
-        Ok(())
     }
 }
 
@@ -123,17 +118,16 @@ impl<'a> Canvas for ScreenLock<'a> {
             fn bounding_box(&self) -> Rectangle;
         }
         to self.unwrap_mut() {
-            fn draw_pixel(&mut self, color: Color, p: Point) -> Result<()>;
-            fn fill_rectangle(&mut self, color: Color, rectangle: &Rectangle) -> Result<()> ;
-            fn draw_char(&mut self, color: Color, p: Point, c: char) -> Result<ICoordinate>;
-            fn draw_string(&mut self, color: Color, p: Point, s: &str) -> Result<ICoordinate>;
+            fn draw_pixel(&mut self, color: Color, p: Point);
+            fn fill_rectangle(&mut self, color: Color, rectangle: &Rectangle) ;
+            fn draw_char(&mut self, color: Color, p: Point, c: char) -> UCoordinate;
+            fn draw_string(&mut self, color: Color, p: Point, s: &str) -> UCoordinate;
             fn draw_fmt(
                 &mut self,
                 color: Color,
                 p: Point,
-                buffer: &mut [u8],
                 args: core::fmt::Arguments,
-            ) -> Result<ICoordinate>;
+            ) -> core::result::Result<UCoordinate, core::fmt::Error>;
         }
     }
 }
@@ -145,17 +139,16 @@ impl Canvas for Screen {
             fn width(&self) -> UCoordinate;
             fn height(&self) -> UCoordinate;
             fn bounding_box(&self) -> Rectangle;
-            fn draw_pixel(&mut self, color: Color, p: Point) -> Result<()>;
-            fn fill_rectangle(&mut self, color: Color, rectangle: &Rectangle) -> Result<()> ;
-            fn draw_char(&mut self, color: Color, p: Point, c: char) -> Result<ICoordinate>;
-            fn draw_string(&mut self, color: Color, p: Point, s: &str) -> Result<ICoordinate>;
+            fn draw_pixel(&mut self, color: Color, p: Point);
+            fn fill_rectangle(&mut self, color: Color, rectangle: &Rectangle) ;
+            fn draw_char(&mut self, color: Color, p: Point, c: char) -> UCoordinate;
+            fn draw_string(&mut self, color: Color, p: Point, s: &str) -> UCoordinate;
             fn draw_fmt(
                 &mut self,
                 color: Color,
                 p: Point,
-                buffer: &mut [u8],
                 args: core::fmt::Arguments,
-            ) -> Result<ICoordinate>;
+            ) -> core::result::Result<UCoordinate, core::fmt::Error>;
         }
     }
 }

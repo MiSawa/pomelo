@@ -1,5 +1,6 @@
 pub mod canvas;
 pub mod console;
+pub mod mouse;
 pub mod screen;
 
 pub type ICoordinate = i32;

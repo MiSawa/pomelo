@@ -32,8 +32,8 @@ args = ["${DEBUG_EFI_FILE}", "${DEBUG_KERNEL_FILE}"]
 
 [tasks.qemu-release]
 dependencies = [
-    { name = 'build', path = 'crates/bootloader' },
-    { name = 'build', path = 'crates/kernel' },
+    { name = 'build-release', path = 'crates/bootloader' },
+    { name = 'build-release', path = 'crates/kernel' },
 ]
 command = "${MIKAN_DEV_PATH}/run_qemu.sh"
 args = ["${RELEASE_EFI_FILE}", "${RELEASE_KERNEL_FILE}"]

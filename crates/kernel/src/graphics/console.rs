@@ -31,8 +31,8 @@ impl<C: Canvas> Console<C> {
 
     fn rc_to_point(row: usize, column: usize) -> Point {
         Point::new(
-            column as ICoordinate * GLYPH_WIDTH,
-            row as ICoordinate * GLYPH_HEIGHT,
+            column as ICoordinate * GLYPH_WIDTH as ICoordinate,
+            row as ICoordinate * GLYPH_HEIGHT as ICoordinate,
         )
     }
 
@@ -40,13 +40,11 @@ impl<C: Canvas> Console<C> {
         // TODO: Use buffer as a ring buffer.
         if self.buffer.is_full() {
             self.canvas
-                .fill_rectangle(self.background, &self.canvas.bounding_box())
-                .ok();
+                .fill_rectangle(self.background, &self.canvas.bounding_box());
             self.buffer.remove(0);
             for (i, row) in self.buffer.iter().enumerate() {
                 self.canvas
-                    .draw_string(self.foreground, Self::rc_to_point(i, 0), row)
-                    .ok();
+                    .draw_string(self.foreground, Self::rc_to_point(i, 0), row);
             }
         }
         self.buffer.push(ArrayString::new());
@@ -58,10 +56,8 @@ impl<C: Canvas> Console<C> {
             if c == '\n' {
                 self.new_line();
             } else {
-                self.cursor_point.x += self
-                    .canvas
-                    .draw_char(self.foreground, self.cursor_point, c)
-                    .unwrap_or(0);
+                self.cursor_point.x +=
+                    self.canvas.draw_char(self.foreground, self.cursor_point, c) as ICoordinate;
                 self.buffer.last_mut().unwrap().try_push(c).ok();
             }
         }
