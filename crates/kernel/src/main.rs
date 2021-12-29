@@ -8,7 +8,7 @@ use pomelo_common::KernelArg;
 use x86_64::structures::idt::InterruptStackFrame;
 
 use pomelo_kernel::{
-    graphics::{canvas::Canvas, console, screen, Color, Rectangle, Size, DESKTOP_BG_COLOR},
+    graphic::{canvas::Canvas, console, screen, Color, Rectangle, Size, DESKTOP_BG_COLOR},
     logger, mouse, pci,
     prelude::*,
     xhci,

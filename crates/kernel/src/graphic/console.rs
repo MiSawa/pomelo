@@ -5,7 +5,7 @@ use arrayvec::{ArrayString, ArrayVec};
 use pomelo_common::GraphicConfig;
 use spin::Mutex;
 
-use crate::graphics::{
+use crate::graphic::{
     self,
     canvas::{Canvas, GLYPH_HEIGHT, GLYPH_WIDTH},
     screen::{self, Screen},
@@ -21,8 +21,8 @@ pub fn initialize(graphic_config: &GraphicConfig) {
     GLOBAL_CONSOLE.lock().get_or_insert_with(|| {
         Console::new(
             screen::screen(),
-            graphics::DESKTOP_FG_COLOR,
-            graphics::DESKTOP_BG_COLOR,
+            graphic::DESKTOP_FG_COLOR,
+            graphic::DESKTOP_BG_COLOR,
         )
     });
 }

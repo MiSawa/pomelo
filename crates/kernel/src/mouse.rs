@@ -2,7 +2,7 @@ use pomelo_common::GraphicConfig;
 use spin::Mutex;
 
 use crate::{
-    graphics::{canvas::Canvas, screen, Color, DESKTOP_BG_COLOR},
+    graphic::{canvas::Canvas, screen, Color, DESKTOP_BG_COLOR},
     prelude::*,
 };
 

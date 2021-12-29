@@ -1,4 +1,4 @@
-use crate::graphics::{Color, ICoordinate, Point, Rectangle, Size, UCoordinate};
+use crate::graphic::{Color, ICoordinate, Point, Rectangle, Size, UCoordinate};
 
 pub const GLYPH_HEIGHT: UCoordinate = 16;
 pub const GLYPH_WIDTH: UCoordinate = 8;
