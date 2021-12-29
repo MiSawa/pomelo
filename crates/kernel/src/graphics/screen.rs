@@ -9,7 +9,9 @@ lazy_static! {
 }
 
 pub fn initialize(graphic_config: &GraphicConfig) {
-    SCREEN.lock().get_or_insert_with(|| ScreenRaw::from(graphic_config));
+    SCREEN
+        .lock()
+        .get_or_insert_with(|| ScreenRaw::from(graphic_config));
 }
 
 pub fn screen() -> Screen {

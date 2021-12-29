@@ -18,6 +18,7 @@ pub extern "C" fn kernel_main(arg: KernelArg) -> ! {
 
 fn initialize(arg: &KernelArg) {
     screen::initialize(&arg.graphic_config);
+    write_desktop();
     console::initialize(&arg.graphic_config);
     mouse::initialize(&arg.graphic_config);
 }
@@ -51,7 +52,7 @@ fn write_desktop() {
 
 fn main(arg: KernelArg) -> Result<!> {
     initialize(&arg);
-    write_desktop();
+    // write_desktop();
     println!("Welcome to Pomelo OS");
     let xhc = pci::scan_devices()
         .flat_map(|device| device.scan_functions())

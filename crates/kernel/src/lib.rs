@@ -30,10 +30,12 @@ pub fn _print_impl(args: ::core::fmt::Arguments) {
 }
 
 pub mod prelude {
-    pub use crate::graphics::{ICoordinate, Point, Size, UCoordinate};
+    pub use crate::{
+        graphics::{ICoordinate, Point, Size, UCoordinate, Vector2d},
+        print, println,
+    };
 
     pub type Result<T> = ::core::result::Result<T, Error>;
     #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
     pub enum Error {}
-    pub use crate::{print, println};
 }

@@ -1,6 +1,5 @@
 pub mod canvas;
 pub mod console;
-pub mod mouse;
 pub mod screen;
 
 pub type ICoordinate = i32;
@@ -20,6 +19,51 @@ impl Point {
     }
     pub const fn new(x: ICoordinate, y: ICoordinate) -> Self {
         Self { x, y }
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Default)]
+pub struct Vector2d {
+    pub x: ICoordinate,
+    pub y: ICoordinate,
+}
+
+impl Vector2d {
+    pub const fn zero() -> Self {
+        Self::new(0, 0)
+    }
+    pub const fn new(x: ICoordinate, y: ICoordinate) -> Self {
+        Self { x, y }
+    }
+}
+
+impl core::ops::Add<Vector2d> for Point {
+    type Output = Point;
+
+    fn add(self, rhs: Vector2d) -> Self::Output {
+        Self::Output::new(self.x + rhs.x, self.y + rhs.y)
+    }
+}
+
+impl core::ops::AddAssign<Vector2d> for Point {
+    fn add_assign(&mut self, rhs: Vector2d) {
+        self.x += rhs.x;
+        self.y += rhs.y;
+    }
+}
+
+impl core::ops::Add<Vector2d> for Vector2d {
+    type Output = Vector2d;
+
+    fn add(self, rhs: Vector2d) -> Self::Output {
+        Self::Output::new(self.x + rhs.x, self.y + rhs.y)
+    }
+}
+
+impl core::ops::AddAssign<Vector2d> for Vector2d {
+    fn add_assign(&mut self, rhs: Vector2d) {
+        self.x += rhs.x;
+        self.y += rhs.y;
     }
 }
 

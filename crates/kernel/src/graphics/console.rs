@@ -32,7 +32,9 @@ pub fn global_console() -> impl core::fmt::Write {
     impl core::fmt::Write for GlobalConsoleWrite {
         fn write_str(&mut self, s: &str) -> core::fmt::Result {
             let mut console = GLOBAL_CONSOLE.lock();
-            let console = console.as_mut().expect("Global console should be initialized");
+            let console = console
+                .as_mut()
+                .expect("Global console should be initialized");
             console.write_str(s)
         }
     }
