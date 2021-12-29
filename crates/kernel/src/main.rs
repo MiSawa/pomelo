@@ -2,14 +2,10 @@
 #![no_std]
 #![feature(once_cell)]
 
-use core::{arch::asm, format_args};
+use core::arch::asm;
 use pomelo_common::KernelArg;
 use pomelo_kernel::graphics::{
-    self,
-    canvas::Canvas,
-    console::Console,
-    screen::{self},
-    Color, ICoordinate, Point, Rectangle, Size,
+    self, canvas::Canvas, console::Console, screen, Color, ICoordinate, Point, Rectangle, Size,
 };
 
 #[no_mangle]
@@ -18,27 +14,38 @@ pub extern "C" fn kernel_main(arg: KernelArg) -> ! {
     screen::initialize(&arg.graphic_config);
     let mut screen = screen::screen();
     // let mut screen = screen.lock();
-    screen.fill_rectangle(Color::WHITE, &screen.bounding_box());
-    screen.fill_rectangle(
-        Color::GREEN,
-        &Rectangle::new(Point::zero(), Size::new(200, 100)),
-    );
-    for (i, c) in ('!'..='~').enumerate() {
-        screen.draw_char(Color::BLACK, Point::new((i * 8) as ICoordinate, 50), c);
-    }
-    screen.draw_string(Color::BLUE, Point::new(0, 66), "Hello, world!");
-    screen
-        .draw_fmt(
-            Color::BLACK,
-            Point::new(0, 82),
-            format_args!("1 + 2 = {}", 1 + 2),
-        )
-        .ok();
 
-    let mut console = Console::new(screen, Color::BLACK, Color::WHITE);
-    for i in 0..27 {
-        core::fmt::write(&mut console, format_args!("print {}\n", i)).ok();
-    }
+    const DESKTOP_BG_COLOR: Color = Color::new(45, 118, 237);
+    const DESKTOP_FG_COLOR: Color = Color::BLACK;
+
+    let screen_size = screen.size();
+    screen.fill_rectangle(DESKTOP_BG_COLOR, &screen.bounding_box());
+    screen.fill_rectangle(
+        Color::new(1, 8, 17),
+        &Rectangle::new(
+            Point::new(0, screen_size.y as ICoordinate - 50),
+            Size::new(screen_size.x, 50),
+        ),
+    );
+    screen.fill_rectangle(
+        Color::new(80, 80, 80),
+        &Rectangle::new(
+            Point::new(0, screen_size.y as ICoordinate - 50),
+            Size::new(screen_size.x / 5, 50),
+        ),
+    );
+    screen.fill_rectangle(
+        Color::new(160, 160, 160),
+        &Rectangle::new(
+            Point::new(10, screen_size.y as ICoordinate - 40),
+            Size::new(30, 30),
+        ),
+    );
+
+    let mut console = Console::new(screen, DESKTOP_FG_COLOR, DESKTOP_BG_COLOR);
+    console.write_string("Welcome to Pomelo OS!");
+    // core::fmt::write(&mut console, format_args!("Wellcome to Pomelo OS!\n")).ok();
+
     let mut screen = screen::screen();
     graphics::mouse::render_mouse_cursor(&mut screen, Point::new(300, 300));
     loop {

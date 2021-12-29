@@ -51,6 +51,15 @@ impl Rectangle {
     pub const fn new(top_left: Point, size: Size) -> Self {
         Self { top_left, size }
     }
+    pub fn from_corner(top_left: Point, bottom_right: Point) -> Self {
+        Self {
+            top_left,
+            size: Size::new(
+                (bottom_right.x - top_left.x).try_into().unwrap(),
+                (bottom_right.y - top_left.y).try_into().unwrap(),
+            ),
+        }
+    }
     pub const fn contains(&self, p: &Point) -> bool {
         self.min_x() <= p.x && p.x < self.max_x() && self.min_y() <= p.y && p.y < self.max_y()
     }
