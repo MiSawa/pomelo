@@ -1,4 +1,5 @@
 use crate::x86_64;
+use derive_getters::Getters;
 
 const CONFIG_ADDRESS: u16 = 0x0CF8;
 const CONFIG_DATA: u16 = 0x0CFC;
@@ -49,43 +50,80 @@ fn is_singleton_type(bus: u8, device: u8, function: u8) -> bool {
     read_header_type(bus, device, function) & 0x80 == 0
 }
 /// Assumes valid (bus, device, function) combination
-fn read_class(bus: u8, device: u8, function: u8) -> PciClass {
+fn read_class(bus: u8, device: u8, function: u8) -> PCIClass {
     let ret = read_pci_config(make_address(bus, device, function, 0x08));
     let base = (ret >> 24) as u8;
     let sub = (ret >> 16) as u8;
     let interface = (ret >> 8) as u8;
-    PciClass::Unimplemented(base, sub, interface)
+    PCIClass::from_code(base, sub, interface)
+}
+/// Assumes valid (bus, device, function) combination
+fn read_bars(bus: u8, device: u8, function: u8) -> [u32; 6] {
+    let mut bars = [0; 6];
+    for i in 0..6 {
+        bars[i as usize] = read_pci_config(make_address(bus, device, function, 0x10 + 4 * i));
+    }
+    bars
 }
 
-#[repr(C)]
+// TODO: Add more from https://pci-ids.ucw.cz/read/PD
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub enum PciClass {
+pub enum PCIClass {
+    /// 0x0C
+    SerialBusController(SerialBusSubclass),
+    /// Other ones
     Unimplemented(u8, u8, u8),
 }
-
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub struct PciDeviceInfo {
+pub enum SerialBusSubclass {
+    /// 0x03
+    USBController(USBProgramInterface),
+    /// Other ones
+    Unimplemented(u8, u8),
+}
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub enum USBProgramInterface {
+    /// 0x30
+    XHCI,
+    /// Other ones
+    Unimplemented(u8),
+}
+
+impl PCIClass {
+    fn from_code(base: u8, sub: u8, interface: u8) -> Self {
+        match base {
+            0x0c => Self::SerialBusController(SerialBusSubclass::from_code(sub, interface)),
+            _ => Self::Unimplemented(base, sub, interface),
+        }
+    }
+}
+impl SerialBusSubclass {
+    fn from_code(sub: u8, interface: u8) -> Self {
+        match sub {
+            0x03 => Self::USBController(USBProgramInterface::from_code(interface)),
+            _ => Self::Unimplemented(sub, interface),
+        }
+    }
+}
+impl USBProgramInterface {
+    fn from_code(interface: u8) -> Self {
+        match interface {
+            0x30 => Self::XHCI,
+            _ => Self::Unimplemented(interface),
+        }
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Getters)]
+pub struct PCIDeviceInfo {
     bus: u8,
     device: u8,
     vendor_id: u16,
     device_id: u16,
 }
 
-impl PciDeviceInfo {
-    pub fn bus(&self) -> u8 {
-        self.bus
-    }
-    pub fn device(&self) -> u8 {
-        self.device
-    }
-    pub fn vendor_id(&self) -> u16 {
-        self.vendor_id
-    }
-    pub fn device_id(&self) -> u16 {
-        self.device_id
-    }
-
-    pub fn scan_functions(&self) -> impl Iterator<Item = PciFunction> {
+impl PCIDeviceInfo {
+    pub fn scan_functions(&self) -> impl Iterator<Item = PCIFunction> {
         let candidates = if is_singleton_type(self.bus, self.device, 0) {
             0..1
         } else {
@@ -95,27 +133,29 @@ impl PciDeviceInfo {
         let device = self.device;
         candidates.filter_map(move |function| {
             read_ids(bus, device, function).map(|(vendor_id, device_id)| {
-                PciFunction::build(bus, device, function, vendor_id, device_id)
+                PCIFunction::build(bus, device, function, vendor_id, device_id)
             })
         })
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub struct PciFunction {
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Getters)]
+pub struct PCIFunction {
     bus: u8,
     device: u8,
     function: u8,
     vendor_id: u16,
     device_id: u16,
     header_type: u8,
-    class: PciClass,
+    class: PCIClass,
+    bars: [u32; 6],
 }
 
-impl PciFunction {
+impl PCIFunction {
     fn build(bus: u8, device: u8, function: u8, vendor_id: u16, device_id: u16) -> Self {
         let header_type = read_header_type(bus, device, function);
         let class = read_class(bus, device, function);
+        let bars = read_bars(bus, device, function);
 
         Self {
             bus,
@@ -125,14 +165,15 @@ impl PciFunction {
             device_id,
             header_type,
             class,
+            bars,
         }
     }
 }
 
-pub fn scan_devices() -> impl Iterator<Item = PciDeviceInfo> {
+pub fn scan_devices() -> impl Iterator<Item = PCIDeviceInfo> {
     (u8::MIN..=u8::MAX).flat_map(|bus| {
         (0..32).flat_map(move |device| {
-            read_ids(bus, device, 0).map(|(vendor_id, device_id)| PciDeviceInfo {
+            read_ids(bus, device, 0).map(|(vendor_id, device_id)| PCIDeviceInfo {
                 bus,
                 device,
                 vendor_id,

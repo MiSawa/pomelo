@@ -5,6 +5,8 @@ pub mod screen;
 
 pub type ICoordinate = i32;
 pub type UCoordinate = u32;
+pub const DESKTOP_BG_COLOR: Color = Color::new(45, 118, 237);
+pub const DESKTOP_FG_COLOR: Color = Color::BLACK;
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Default)]
 pub struct Point {

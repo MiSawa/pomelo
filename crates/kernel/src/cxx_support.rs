@@ -1,5 +1,7 @@
 /// This file is copied and then modified from https://github.com/gifnksm/sabios/blob/a0729dbdaafbbc318c6bc13636a3a17a842c782b/src/cxx_support.rs
 /// which is distributed under the following license.
+/// To see the modification from the original source, please use `git diff` against the commit that
+/// introduced this file.
 ///
 /// MIT License
 /// Copyright (c) 2021 gifnksm <makoto.nksm+github@gmail.com>
@@ -21,11 +23,10 @@
 /// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 /// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 /// SOFTWARE.
-
-use crate::log::{self, Level};
-use core::{ptr, slice, str};
+use core::ptr;
 
 #[no_mangle]
+#[allow(unused)]
 extern "C" fn sabios_log(
     level: i32,
     file: *const u8,
@@ -35,29 +36,29 @@ extern "C" fn sabios_log(
     msg_len: usize,
     cont_line: bool,
 ) -> i32 {
-    let level = match level {
-        3 => Level::Error,
-        4 => Level::Warn,
-        7 => Level::Debug,
-        8 => Level::Trace,
-        _ => Level::Info,
-    };
+    // let level = match level {
+    //     3 => Level::Error,
+    //     4 => Level::Warn,
+    //     7 => Level::Debug,
+    //     8 => Level::Trace,
+    //     _ => Level::Info,
+    // };
 
-    unsafe {
-        let msg = slice::from_raw_parts(msg, msg_len);
-        let msg = str::from_utf8_unchecked(msg);
-        let file = slice::from_raw_parts(file, file_len);
-        let file = str::from_utf8_unchecked(file);
-        let newline = msg.ends_with('\n');
-        log::_log(
-            level,
-            format_args!("{}", msg.trim_end()),
-            file,
-            line,
-            cont_line,
-            newline,
-        );
-    }
+    // unsafe {
+    //     let msg = slice::from_raw_parts(msg, msg_len);
+    //     let msg = str::from_utf8_unchecked(msg);
+    //     let file = slice::from_raw_parts(file, file_len);
+    //     let file = str::from_utf8_unchecked(file);
+    //     let newline = msg.ends_with('\n');
+    //     log::_log(
+    //         level,
+    //         format_args!("{}", msg.trim_end()),
+    //         file,
+    //         line,
+    //         cont_line,
+    //         newline,
+    //     );
+    // }
 
     msg_len as i32
 }
@@ -80,7 +81,7 @@ extern "C" fn sbrk(_increment: isize) -> *const u8 {
 #[no_mangle]
 extern "C" fn _exit() -> ! {
     loop {
-        x86_64::instructions::hlt();
+        crate::x86_64::hlt();
     }
 }
 

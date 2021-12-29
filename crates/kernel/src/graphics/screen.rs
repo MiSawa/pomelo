@@ -9,7 +9,7 @@ lazy_static! {
 }
 
 pub fn initialize(graphic_config: &GraphicConfig) {
-    SCREEN.lock().replace(ScreenRaw::from(graphic_config));
+    SCREEN.lock().get_or_insert_with(|| ScreenRaw::from(graphic_config));
 }
 
 pub fn screen() -> Screen {
@@ -94,11 +94,11 @@ impl<'a> ScreenLock<'a> {
     }
 
     fn unwrap(&self) -> &ScreenRaw {
-        self.locked.as_ref().unwrap()
+        self.locked.as_ref().expect("Screen should be initialized")
     }
 
     fn unwrap_mut(&mut self) -> &mut ScreenRaw {
-        self.locked.as_mut().unwrap()
+        self.locked.as_mut().expect("Screen should be initialized")
     }
 }
 

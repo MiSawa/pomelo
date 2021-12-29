@@ -2,11 +2,42 @@ const ROWS: usize = 25;
 const COLUMNS: usize = 80;
 
 use arrayvec::{ArrayString, ArrayVec};
+use pomelo_common::GraphicConfig;
+use spin::Mutex;
 
 use crate::graphics::{
+    self,
     canvas::{Canvas, GLYPH_HEIGHT, GLYPH_WIDTH},
+    screen::{self, Screen},
     Color, ICoordinate, Point,
 };
+
+lazy_static! {
+    static ref GLOBAL_CONSOLE: Mutex<Option<Console<Screen>>> = Mutex::new(Option::None);
+}
+
+pub fn initialize(graphic_config: &GraphicConfig) {
+    screen::initialize(graphic_config);
+    GLOBAL_CONSOLE.lock().get_or_insert_with(|| {
+        Console::new(
+            screen::screen(),
+            graphics::DESKTOP_FG_COLOR,
+            graphics::DESKTOP_BG_COLOR,
+        )
+    });
+}
+
+pub fn global_console() -> impl core::fmt::Write {
+    struct GlobalConsoleWrite();
+    impl core::fmt::Write for GlobalConsoleWrite {
+        fn write_str(&mut self, s: &str) -> core::fmt::Result {
+            let mut console = GLOBAL_CONSOLE.lock();
+            let console = console.as_mut().expect("Global console should be initialized");
+            console.write_str(s)
+        }
+    }
+    GlobalConsoleWrite()
+}
 
 pub struct Console<C: Canvas> {
     canvas: C,
