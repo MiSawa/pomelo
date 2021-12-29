@@ -31,3 +31,7 @@ cargo make qemu
 cargo make qemu-release
 ```
 
+
+## Credits
+- The code in [cxx_support.rs](./crates/kernel/src/cxx_support.rs) are originaly taken from that of [sabios](https://github.com/gifnksm/sabios/blob/a0729dbdaafbbc318c6bc13636a3a17a842c782b/src/cxx_support.rs), built by [gifnksm](https://github.com/gifnksm), distributed under MIT/Apache license. Please refer to the header of the file for more detail.
+
