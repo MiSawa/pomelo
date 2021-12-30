@@ -44,7 +44,7 @@ pub fn initialize(func: &pci::PCIFunction) {
     });
 }
 
-pub(crate) fn on_interrupt() {
+pub(crate) fn handle_events() {
     let mut xhc = XHC.lock();
     let xhc = xhc.as_mut().unwrap();
     while xhc.has_event() {

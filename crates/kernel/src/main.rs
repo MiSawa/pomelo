@@ -5,7 +5,7 @@
 use pomelo_common::KernelArg;
 
 use pomelo_kernel::{
-    gdt,
+    events, gdt,
     graphics::{canvas::Canvas, console, screen, Color, Rectangle, Size, DESKTOP_BG_COLOR},
     interrupts::{self, InterruptIndex},
     logger, mouse,
@@ -84,14 +84,7 @@ fn main(arg: KernelArg) -> Result<!> {
 
     xhci::initialize(&xhc);
     log::info!("Initialized xhci");
-
-    // It seems to be enabled already but just to make sure...
-    x86_64::instructions::interrupts::enable();
-    //
-    #[allow(clippy::empty_loop)]
-    loop {
-        x86_64::instructions::hlt();
-    }
+    events::event_loop()
 }
 
 #[cfg(not(test))]

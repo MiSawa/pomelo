@@ -1,11 +1,14 @@
 #![no_main]
 #![no_std]
+#![feature(maybe_uninit_uninit_array)]
 #![feature(abi_x86_interrupt)]
+#![feature(never_type)]
 
 #[macro_use]
 extern crate lazy_static;
 
 mod cxx_support;
+pub mod events;
 pub mod gdt;
 pub mod graphics;
 pub mod interrupts;
@@ -13,6 +16,7 @@ pub mod logger;
 pub mod mouse;
 pub mod msi;
 pub mod pci;
+pub mod ring_buffer;
 pub mod xhci;
 
 #[macro_export]
