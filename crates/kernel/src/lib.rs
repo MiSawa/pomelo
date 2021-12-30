@@ -1,14 +1,17 @@
 #![no_main]
 #![no_std]
-#![feature(once_cell)]
+#![feature(abi_x86_interrupt)]
 
 #[macro_use]
 extern crate lazy_static;
 
 mod cxx_support;
+pub mod gdt;
 pub mod graphic;
+pub mod interruption;
 pub mod logger;
 pub mod mouse;
+pub mod msi;
 pub mod pci;
 pub mod xhci;
 
@@ -39,6 +42,7 @@ pub mod prelude {
     #[derive(Debug)]
     pub enum Error {
         LogInitializeError(log::SetLoggerError),
+        Whatever(&'static str),
     }
     impl From<log::SetLoggerError> for Error {
         fn from(e: log::SetLoggerError) -> Self {

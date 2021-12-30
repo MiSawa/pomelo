@@ -1,5 +1,5 @@
-const ROWS: usize = 25;
-const COLUMNS: usize = 80;
+const ROWS: usize = 40;
+const COLUMNS: usize = 160;
 
 use arrayvec::{ArrayString, ArrayVec};
 use pomelo_common::GraphicConfig;
@@ -89,6 +89,14 @@ impl<C: Canvas> Console<C> {
             if c == '\n' {
                 self.new_line();
             } else {
+                if self.cursor_point.x > (COLUMNS as ICoordinate) * (GLYPH_WIDTH as ICoordinate) {
+                    self.new_line();
+                    self.cursor_point.x +=
+                        self.canvas
+                            .draw_char(self.foreground, self.cursor_point, '>')
+                            as ICoordinate;
+                    self.buffer.last_mut().unwrap().try_push('>').ok();
+                }
                 self.cursor_point.x +=
                     self.canvas.draw_char(self.foreground, self.cursor_point, c) as ICoordinate;
                 self.buffer.last_mut().unwrap().try_push(c).ok();

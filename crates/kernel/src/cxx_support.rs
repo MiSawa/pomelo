@@ -29,37 +29,32 @@ use core::ptr;
 #[allow(unused)]
 extern "C" fn sabios_log(
     level: i32,
-    file: *const u8,
-    file_len: usize,
-    line: u32,
+    // file: *const u8,
+    // file_len: usize,
+    // line: u32,
     msg: *const u8,
     msg_len: usize,
-    cont_line: bool,
+    // cont_line: bool,
 ) -> i32 {
-    // let level = match level {
-    //     3 => Level::Error,
-    //     4 => Level::Warn,
-    //     7 => Level::Debug,
-    //     8 => Level::Trace,
-    //     _ => Level::Info,
-    // };
+    let level = match level {
+        3 => log::Level::Error,
+        4 => log::Level::Warn,
+        6 => log::Level::Debug,
+        7 => log::Level::Trace,
+        _ => log::Level::Info,
+    };
 
-    // unsafe {
-    //     let msg = slice::from_raw_parts(msg, msg_len);
-    //     let msg = str::from_utf8_unchecked(msg);
-    //     let file = slice::from_raw_parts(file, file_len);
-    //     let file = str::from_utf8_unchecked(file);
-    //     let newline = msg.ends_with('\n');
-    //     log::_log(
-    //         level,
-    //         format_args!("{}", msg.trim_end()),
-    //         file,
-    //         line,
-    //         cont_line,
-    //         newline,
-    //     );
-    // }
-
+    unsafe {
+        let mut msg = core::slice::from_raw_parts(msg, msg_len);
+        //     while !msg.is_empty() && (msg[0] >> 7) == 1 {
+        //         msg = &msg[1..];
+        //     }
+        let msg = core::str::from_utf8_unchecked(msg);
+        //     let file = core::slice::from_raw_parts(file, file_len);
+        //     let file = core::str::from_utf8_unchecked(file);
+        //     log::log!(level, "{}, {}, {:?}", file, line, msg);
+        log::log!(level, "{}", msg);
+    }
     msg_len as i32
 }
 

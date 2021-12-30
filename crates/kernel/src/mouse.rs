@@ -14,13 +14,14 @@ pub fn initialize(graphic_config: &GraphicConfig) {
     screen::initialize(graphic_config);
     let screen_size = screen::screen().size();
     MOUSE_CURSOR.lock().get_or_insert_with(|| {
-        let mut cursor = MouseCursor::new(Point::new(100, 100), screen_size);
+        let mut cursor = MouseCursor::new(Point::new(400, 400), screen_size);
         cursor.move_relative(Vector2d::zero());
         cursor
     });
 }
 
 pub extern "C" fn observe_cursor_move(x: i8, y: i8) {
+    log::info!("Mouse event!");
     let mut cursor = MOUSE_CURSOR.lock();
     let cursor = cursor.as_mut().expect("Mouse cursor should be initialized");
     cursor.move_relative(Vector2d::new(x as ICoordinate, y as ICoordinate));

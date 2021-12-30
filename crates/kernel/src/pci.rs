@@ -1,4 +1,5 @@
 // use crate::x86_64;
+use bitfield::bitfield;
 use derive_getters::Getters;
 use x86_64::instructions::port::{PortReadOnly, PortWriteOnly};
 
@@ -8,10 +9,18 @@ const CONFIG_DATA: u16 = 0x0CFC;
 fn read_pci_config(address: u32) -> u32 {
     let mut addr = PortWriteOnly::new(CONFIG_ADDRESS);
     let mut data = PortReadOnly::new(CONFIG_DATA);
-    unsafe {
+    x86_64::instructions::interrupts::without_interrupts(|| unsafe {
         addr.write(address);
         data.read()
-    }
+    })
+}
+fn write_pci_config(address: u32, value: u32) {
+    let mut addr = PortWriteOnly::new(CONFIG_ADDRESS);
+    let mut data = PortWriteOnly::new(CONFIG_DATA);
+    x86_64::instructions::interrupts::without_interrupts(|| unsafe {
+        addr.write(address);
+        data.write(value)
+    });
 }
 fn make_address(bus: u8, device: u8, function: u8, register_address: u8) -> u32 {
     assert!(device >> 5 == 0); // 5 bits
@@ -81,6 +90,20 @@ pub enum USBProgramInterface {
     XHCI,
     /// Other ones
     Unimplemented(u8),
+}
+
+bitfield! {
+    #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub struct PCICapabilityHeaderData(u32);
+    impl Debug;
+    u8; pub capability_id, _: 7, 0;
+    u8; next_ptr, _: 15, 8;
+    u16; pub capability, _: 31, 16;
+}
+#[derive(Getters, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct PCICapabilityHeader {
+    data: PCICapabilityHeaderData,
+    capability_address: u8,
 }
 
 impl PCIClass {
@@ -161,6 +184,48 @@ impl PCIFunction {
             class,
             bars,
         }
+    }
+
+    pub fn read_conf_register(&self, register_address: u8) -> u32 {
+        read_pci_config(make_address(
+            self.bus,
+            self.device,
+            self.function,
+            register_address,
+        ))
+    }
+    pub fn write_conf_register(&self, register_address: u8, value: u32) {
+        log::info!("{:02x} <- {:08x}", register_address, value);
+        write_pci_config(
+            make_address(self.bus, self.device, self.function, register_address),
+            value,
+        )
+    }
+    pub fn read_bars(&self) -> [u32; 6] {
+        let mut bars = [0; 6];
+        for i in 0..6 {
+            bars[i as usize] = self.read_conf_register(0x10 + 4 * i);
+        }
+        bars
+    }
+
+    fn read_capability_header(&self, capability_address: u8) -> Option<PCICapabilityHeader> {
+        if capability_address == 0 {
+            None
+        } else {
+            let data = self.read_conf_register(capability_address);
+            Some(PCICapabilityHeader {
+                data: PCICapabilityHeaderData(data),
+                capability_address,
+            })
+        }
+    }
+
+    pub fn capability_headers(&self) -> impl Iterator<Item = PCICapabilityHeader> + '_ {
+        let capability_address = self.read_capability_header(self.read_conf_register(0x34) as u8);
+        core::iter::successors(capability_address, |prev| {
+            self.read_capability_header(prev.data.next_ptr())
+        })
     }
 }
 

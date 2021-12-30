@@ -1,15 +1,16 @@
 #![no_main]
 #![no_std]
 #![feature(never_type)]
-#![feature(abi_x86_interrupt)]
 
-use log::{error, info, LevelFilter};
 use pomelo_common::KernelArg;
-use x86_64::structures::idt::InterruptStackFrame;
 
 use pomelo_kernel::{
+    gdt,
     graphic::{canvas::Canvas, console, screen, Color, Rectangle, Size, DESKTOP_BG_COLOR},
-    logger, mouse, pci,
+    interruption::{self, InterruptIndex},
+    logger, mouse,
+    msi::{configure_msi_fixed_destination, DeliveryMode, TriggerMode},
+    pci,
     prelude::*,
     xhci,
 };
@@ -21,8 +22,10 @@ pub extern "C" fn kernel_main(arg: KernelArg) -> ! {
 
 fn initialize(arg: &KernelArg) -> Result<()> {
     screen::initialize(&arg.graphic_config);
-    logger::initialize(LevelFilter::Debug)?;
+    logger::initialize(log::LevelFilter::Warn)?;
     write_desktop();
+    gdt::initialize();
+    interruption::initialize();
     console::initialize(&arg.graphic_config);
     mouse::initialize(&arg.graphic_config);
     Ok(())
@@ -57,7 +60,6 @@ fn write_desktop() {
 
 fn main(arg: KernelArg) -> Result<!> {
     initialize(&arg)?;
-    // write_desktop();
     println!("Welcome to Pomelo OS");
     let xhc = pci::scan_devices()
         .flat_map(|device| device.scan_functions())
@@ -70,24 +72,32 @@ fn main(arg: KernelArg) -> Result<!> {
             )
         })
         .expect("No xHCI was found");
-    let xhc = xhci::initialize(&xhc);
-    info!("Initialized xhci");
 
+    configure_msi_fixed_destination(
+        &xhc,
+        TriggerMode::Level,
+        DeliveryMode::Fixed,
+        InterruptIndex::XHCI as u8,
+        0,
+    )?;
+    log::info!("Initialized xhc interruption");
+
+    xhci::initialize(&xhc);
+    log::info!("Initialized xhci");
+
+    // It seems to be enabled already but just to make sure...
+    x86_64::instructions::interrupts::enable();
+    //
+    #[allow(clippy::empty_loop)]
     loop {
-        if let Err(e) = xhc.process_event() {
-            error!("Something went wrong: {}", e.0);
-        }
+        x86_64::instructions::hlt();
     }
-}
-
-extern "x86-interrupt" fn interrupt_handler_xhci(_stack_frame: InterruptStackFrame) {
-    print!(".");
 }
 
 #[cfg(not(test))]
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
-    println!("{}", info);
+    println!("I'm panicked!!!! {}", info);
     #[allow(clippy::empty_loop)]
     loop {
         x86_64::instructions::hlt()
