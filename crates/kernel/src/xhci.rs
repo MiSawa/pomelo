@@ -29,7 +29,6 @@ pub fn initialize(func: &pci::PCIFunction) {
         let mmio_base = mmio_base & !0xF;
         log::trace!("mmio base: {:016x}", mmio_base);
 
-
         const BUFFER_LEN: usize = 4096 * 32;
         static mut BUFFER: [u8; BUFFER_LEN] = [0; BUFFER_LEN];
         unsafe {

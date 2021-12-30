@@ -6,8 +6,8 @@ use pomelo_common::KernelArg;
 
 use pomelo_kernel::{
     gdt,
-    graphic::{canvas::Canvas, console, screen, Color, Rectangle, Size, DESKTOP_BG_COLOR},
-    interruption::{self, InterruptIndex},
+    graphics::{canvas::Canvas, console, screen, Color, Rectangle, Size, DESKTOP_BG_COLOR},
+    interrupts::{self, InterruptIndex},
     logger, mouse,
     msi::{configure_msi_fixed_destination, DeliveryMode, TriggerMode},
     pci,
@@ -25,7 +25,7 @@ fn initialize(arg: &KernelArg) -> Result<()> {
     logger::initialize(log::LevelFilter::Warn)?;
     write_desktop();
     gdt::initialize();
-    interruption::initialize();
+    interrupts::initialize();
     console::initialize(&arg.graphic_config);
     mouse::initialize(&arg.graphic_config);
     Ok(())

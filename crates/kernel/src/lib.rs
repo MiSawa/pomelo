@@ -7,8 +7,8 @@ extern crate lazy_static;
 
 mod cxx_support;
 pub mod gdt;
-pub mod graphic;
-pub mod interruption;
+pub mod graphics;
+pub mod interrupts;
 pub mod logger;
 pub mod mouse;
 pub mod msi;
@@ -28,13 +28,13 @@ macro_rules! println {
 
 pub fn _print_impl(args: ::core::fmt::Arguments) {
     use ::core::fmt::Write;
-    let mut writer = crate::graphic::console::global_console();
+    let mut writer = crate::graphics::console::global_console();
     writer.write_fmt(args).unwrap();
 }
 
 pub mod prelude {
     pub use crate::{
-        graphic::{ICoordinate, Point, Size, UCoordinate, Vector2d},
+        graphics::{ICoordinate, Point, Size, UCoordinate, Vector2d},
         print, println,
     };
 

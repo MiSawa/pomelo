@@ -2,7 +2,7 @@ use delegate::delegate;
 use pomelo_common::GraphicConfig;
 use spin::Mutex;
 
-use crate::graphic::{canvas::Canvas, Color, ICoordinate, Point, Rectangle, Size, UCoordinate};
+use crate::graphics::{canvas::Canvas, Color, ICoordinate, Point, Rectangle, Size, UCoordinate};
 
 lazy_static! {
     static ref SCREEN: Mutex<Option<ScreenRaw>> = Mutex::new(Option::None);
