@@ -11,7 +11,7 @@ use pomelo_kernel::{
     events, gdt,
     graphics::{canvas::Canvas, console, screen, Color, Rectangle, Size, DESKTOP_BG_COLOR},
     interrupts::{self, InterruptIndex},
-    logger, mouse,
+    logger, memory_manager, mouse,
     msi::{configure_msi_fixed_destination, DeliveryMode, TriggerMode},
     paging, pci,
     prelude::*,
@@ -51,6 +51,7 @@ pub extern "sysv64" fn stack_tricked(boot_info: &BootInfo) {
 
 fn initialize(boot_info: &BootInfo) -> Result<()> {
     paging::initialize();
+    memory_manager::initialize(boot_info.memory_mapping());
     screen::initialize(boot_info.graphic_config());
     logger::initialize(log::LevelFilter::Warn)?;
     write_desktop();
