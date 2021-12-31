@@ -16,6 +16,7 @@ pub mod logger;
 pub mod memory;
 pub mod mouse;
 pub mod msi;
+pub mod paging;
 pub mod pci;
 pub mod ring_buffer;
 pub mod xhci;

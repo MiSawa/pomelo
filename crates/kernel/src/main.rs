@@ -13,7 +13,7 @@ use pomelo_kernel::{
     interrupts::{self, InterruptIndex},
     logger, mouse,
     msi::{configure_msi_fixed_destination, DeliveryMode, TriggerMode},
-    pci,
+    paging, pci,
     prelude::*,
     xhci,
 };
@@ -50,6 +50,7 @@ pub extern "sysv64" fn stack_tricked(boot_info: &BootInfo) {
 }
 
 fn initialize(boot_info: &BootInfo) -> Result<()> {
+    paging::initialize();
     screen::initialize(boot_info.graphic_config());
     logger::initialize(log::LevelFilter::Warn)?;
     write_desktop();
