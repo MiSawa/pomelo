@@ -1,7 +1,10 @@
 #![no_main]
 #![no_std]
 #![feature(never_type)]
+#![feature(asm_sym)]
+#![feature(maybe_uninit_uninit_array)]
 
+use core::{arch::asm, mem::MaybeUninit};
 use pomelo_common::BootInfo;
 
 use pomelo_kernel::{
@@ -16,9 +19,33 @@ use pomelo_kernel::{
 };
 
 #[no_mangle]
-pub extern "sysv64" fn kernel_main(boot_info: BootInfo) {
+pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) {
     // Just to make sure this function has the expected type signature.
     let _: pomelo_common::KernelMain = kernel_main;
+
+    const KERNEL_MAIN_STACK_SIZE: usize = 1024 * 1024;
+    #[repr(align(16))]
+    struct Aligned([MaybeUninit<u8>; KERNEL_MAIN_STACK_SIZE]);
+    static KERNEL_MAIN_STACK: Aligned = Aligned(MaybeUninit::uninit_array());
+    let stack_bottom = KERNEL_MAIN_STACK.0.as_ptr_range().end;
+    unsafe {
+        asm!(
+            "mov rsp, {}", // change the stack pointer
+            "mov rdi, {}", // store the arg `boot_info`
+            "call {}",     // stack_tricked(boot_info)
+            in(reg) stack_bottom,
+            in(reg) boot_info,
+            sym stack_tricked
+        );
+    }
+    loop {
+        x86_64::instructions::hlt();
+    }
+}
+#[no_mangle]
+pub extern "sysv64" fn stack_tricked(boot_info: &BootInfo) {
+    // Just to make sure this function has the expected type signature.
+    let _: pomelo_common::KernelMain = stack_tricked;
     main(boot_info).expect("What happened???")
 }
 
@@ -60,8 +87,8 @@ fn write_desktop() {
     );
 }
 
-fn main(boot_info: BootInfo) -> Result<!> {
-    initialize(&boot_info)?;
+fn main(boot_info: &BootInfo) -> Result<!> {
+    initialize(boot_info)?;
     println!("Welcome to Pomelo OS");
     let xhc = pci::scan_devices()
         .flat_map(|device| device.scan_functions())

@@ -3,7 +3,7 @@
 pub mod graphics;
 pub mod memory_mapping;
 
-pub type KernelMain = extern "sysv64" fn(BootInfo);
+pub type KernelMain = extern "sysv64" fn(&BootInfo);
 
 use graphics::GraphicConfig;
 use memory_mapping::MemoryMapping;

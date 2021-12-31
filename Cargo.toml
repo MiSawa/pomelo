@@ -1,5 +1,7 @@
+
 [workspace]
 members = ['crates/*']
+resolver = "2"
 
 # TODO: Remove when it's published to crates.io
 [patch.crates-io]

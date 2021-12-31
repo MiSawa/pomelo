@@ -72,10 +72,14 @@ fn actual_main(handle: Handle, mut st: SystemTable<Boot>) -> Result<()> {
     let initialized_descriptors =
         unsafe { MaybeUninit::slice_assume_init_ref(&DESCRIPTORS[0..initialized_count]) };
 
-    kernel_main(BootInfo::new(
+    // We'd like to store the arguments to the kernel main in the heap instead of the stack.
+    static mut BOOT_INFO: MaybeUninit<BootInfo> = MaybeUninit::uninit();
+    unsafe { &mut BOOT_INFO }.write(BootInfo::new(
         graphic_config,
         MemoryMapping::new(initialized_descriptors),
     ));
+    let boot_info = unsafe { BOOT_INFO.assume_init_ref() };
+    kernel_main(boot_info);
 
     #[allow(clippy::empty_loop)]
     loop {

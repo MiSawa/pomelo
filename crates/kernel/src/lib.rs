@@ -13,6 +13,7 @@ pub mod gdt;
 pub mod graphics;
 pub mod interrupts;
 pub mod logger;
+pub mod memory;
 pub mod mouse;
 pub mod msi;
 pub mod pci;
