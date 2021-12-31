@@ -2,7 +2,7 @@ const ROWS: usize = 40;
 const COLUMNS: usize = 160;
 
 use arrayvec::{ArrayString, ArrayVec};
-use pomelo_common::GraphicConfig;
+use pomelo_common::graphics::GraphicConfig;
 use spin::Mutex;
 
 use crate::graphics::{

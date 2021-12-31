@@ -1,43 +1,32 @@
 #![no_std]
 
-#[repr(C)]
-pub enum PixelFormat {
-    Rgb,
-    Bgr,
-}
+pub mod graphics;
+pub mod memory_mapping;
 
-impl PixelFormat {
-    pub fn r_offset(&self) -> u8 {
-        match self {
-            PixelFormat::Rgb => 0,
-            PixelFormat::Bgr => 2,
-        }
-    }
-    pub fn g_offset(&self) -> u8 {
-        match self {
-            PixelFormat::Rgb => 1,
-            PixelFormat::Bgr => 1,
-        }
-    }
-    pub fn b_offset(&self) -> u8 {
-        match self {
-            PixelFormat::Rgb => 2,
-            PixelFormat::Bgr => 0,
-        }
-    }
-}
+pub type KernelMain = extern "sysv64" fn(BootInfo);
+
+use graphics::GraphicConfig;
+use memory_mapping::MemoryMapping;
 
 #[repr(C)]
-pub struct GraphicConfig {
-    pub frame_buffer_base: *mut u8,
-    pub frame_buffer_size: usize,
-    pub pixel_format: PixelFormat,
-    pub horisontal_resolution: usize,
-    pub vertical_resolution: usize,
-    pub stride: usize,
+pub struct BootInfo {
+    graphic_config: GraphicConfig,
+    memory_mapping: MemoryMapping,
 }
 
-#[repr(C)]
-pub struct KernelArg {
-    pub graphic_config: GraphicConfig,
+impl BootInfo {
+    pub fn new(graphic_config: GraphicConfig, memory_mapping: MemoryMapping) -> Self {
+        Self {
+            graphic_config,
+            memory_mapping,
+        }
+    }
+
+    pub fn graphic_config(&self) -> &GraphicConfig {
+        &self.graphic_config
+    }
+
+    pub fn memory_mapping(&self) -> &MemoryMapping {
+        &self.memory_mapping
+    }
 }

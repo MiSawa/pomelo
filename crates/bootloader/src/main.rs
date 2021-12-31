@@ -2,19 +2,29 @@
 #![no_std]
 #![feature(abi_efiapi)]
 #![feature(int_roundings)]
+#![feature(maybe_uninit_uninit_array)]
+#![feature(maybe_uninit_slice)]
 
 use anyhow::{anyhow, bail, Context as _, Error, Result};
-use core::{arch::asm, fmt::Write};
+use core::{arch::asm, fmt::Write, mem::MaybeUninit};
 use object::{elf, read::elf::ProgramHeader as _, Endianness};
-use pomelo_common::{GraphicConfig, KernelArg, PixelFormat};
+use pomelo_common::{
+    graphics::{GraphicConfig, PixelFormat},
+    memory_mapping::{MemoryDescriptor, MemoryMapping},
+    BootInfo, KernelMain,
+};
 use uefi::{
     prelude::*,
     proto::{
         console::gop::GraphicsOutput,
         media::file::{Directory, File, FileAttribute, FileInfo, FileMode, FileType, RegularFile},
     },
-    table::boot::{AllocateType, MemoryType},
+    table::boot,
 };
+
+const MAX_MEMORY_MAP_ENTRY_COUNT: usize = 128;
+const MEMORY_MAP_BUF_SIZE: usize = 16 * 1024;
+const FILE_INFO_BUF_SIZE: usize = 8 * 1024;
 
 #[entry]
 fn main(handle: Handle, st: SystemTable<Boot>) -> Status {
@@ -43,12 +53,29 @@ fn actual_main(handle: Handle, mut st: SystemTable<Boot>) -> Result<()> {
 
     let graphic_config = read_graphic_config(&mut st)?;
 
-    let mut memory_map = [0; 16 * 1024];
-    let (_st, _) = st
-        .exit_boot_services(handle, &mut memory_map)
+    static mut MEMORY_MAP: [u8; MEMORY_MAP_BUF_SIZE] = [0; MEMORY_MAP_BUF_SIZE];
+    let (_st, memory_descriptor_iter) = st
+        .exit_boot_services(handle, unsafe { &mut MEMORY_MAP })
         .expect_success("Failed to exit boot services");
 
-    kernel_main(KernelArg { graphic_config });
+    static mut DESCRIPTORS: [MaybeUninit<MemoryDescriptor>; MAX_MEMORY_MAP_ENTRY_COUNT] =
+        MaybeUninit::uninit_array();
+    let mut initialized_count = 0;
+    for descriptor in memory_descriptor_iter {
+        assert!(
+            initialized_count < unsafe { DESCRIPTORS }.len(),
+            "Reached to the max count of memory mapping descriptors."
+        );
+        unsafe { &mut DESCRIPTORS[initialized_count] }.write(*descriptor);
+        initialized_count += 1;
+    }
+    let initialized_descriptors =
+        unsafe { MaybeUninit::slice_assume_init_ref(&DESCRIPTORS[0..initialized_count]) };
+
+    kernel_main(BootInfo::new(
+        graphic_config,
+        MemoryMapping::new(initialized_descriptors),
+    ));
 
     #[allow(clippy::empty_loop)]
     loop {
@@ -111,7 +138,7 @@ fn prepare_kernel<Elf: object::read::elf::FileHeader<Endian = Endianness>>(
     bs: &BootServices,
     root: &mut Directory,
     filename: &str,
-) -> Result<extern "sysv64" fn(KernelArg)> {
+) -> Result<KernelMain> {
     let kernel_file = root
         .open(filename, FileMode::Read, FileAttribute::empty())
         .warning_as_error()
@@ -123,7 +150,7 @@ fn prepare_kernel<Elf: object::read::elf::FileHeader<Endian = Endianness>>(
         FileType::Regular(f) => f,
         _ => bail!("kernel file exists as non-regular-file"),
     };
-    let mut file_info_buffer = [0; 8192];
+    let mut file_info_buffer = [0; FILE_INFO_BUF_SIZE];
     let kernel_file_info = kernel_file
         .get_info::<FileInfo>(&mut file_info_buffer)
         .expect_success("Failed to get file info");
@@ -140,7 +167,7 @@ fn prepare_kernel<Elf: object::read::elf::FileHeader<Endian = Endianness>>(
     }
     let kernel_content = {
         let ptr = bs
-            .allocate_pool(MemoryType::LOADER_DATA, kernel_file_size)
+            .allocate_pool(boot::MemoryType::LOADER_DATA, kernel_file_size)
             .warning_as_error()
             .map_err(|_| anyhow!("Unable to allocate temporary memory to read the kernel"))?;
         AllocatedMemory(bs, unsafe {
@@ -178,8 +205,8 @@ fn prepare_kernel<Elf: object::read::elf::FileHeader<Endian = Endianness>>(
     const PAGE_SIZE: usize = 0x1000;
     let allocate_page_count = kernel_length.div_ceil(PAGE_SIZE);
     bs.allocate_pages(
-        AllocateType::Address(kernel_base_address),
-        MemoryType::LOADER_DATA,
+        boot::AllocateType::Address(kernel_base_address),
+        boot::MemoryType::LOADER_DATA,
         allocate_page_count,
     )
     .expect_success("Failed to allocate pages");
@@ -205,12 +232,12 @@ fn prepare_kernel<Elf: object::read::elf::FileHeader<Endian = Endianness>>(
         }
     }
     drop(kernel_content);
-    let entry_point: extern "sysv64" fn(KernelArg) = unsafe { core::mem::transmute(entry_point) };
+    let entry_point: KernelMain = unsafe { core::mem::transmute(entry_point) };
     Ok(entry_point)
 }
 
 fn write_memory_map_file(bs: &BootServices, root: &mut Directory, filename: &str) -> Result<()> {
-    let mut memory_map = [0; 16 * 1024];
+    let mut memory_map = [0; MEMORY_MAP_BUF_SIZE];
     let (_map_key, desc_iter) = bs
         .memory_map(&mut memory_map)
         .warning_as_error()

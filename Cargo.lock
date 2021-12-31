@@ -626,6 +626,9 @@ dependencies = [
 [[package]]
 name = "pomelo-common"
 version = "0.1.0"
+dependencies = [
+ "uefi",
+]
 
 [[package]]
 name = "pomelo-kernel"

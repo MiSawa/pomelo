@@ -1,5 +1,5 @@
 use delegate::delegate;
-use pomelo_common::GraphicConfig;
+use pomelo_common::graphics::GraphicConfig;
 use spin::Mutex;
 
 use crate::graphics::{canvas::Canvas, Color, ICoordinate, Point, Rectangle, Size, UCoordinate};

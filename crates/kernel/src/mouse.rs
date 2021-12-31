@@ -1,4 +1,4 @@
-use pomelo_common::GraphicConfig;
+use pomelo_common::graphics::GraphicConfig;
 use spin::Mutex;
 
 use crate::{

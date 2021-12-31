@@ -2,7 +2,7 @@
 #![no_std]
 #![feature(never_type)]
 
-use pomelo_common::KernelArg;
+use pomelo_common::BootInfo;
 
 use pomelo_kernel::{
     events, gdt,
@@ -16,18 +16,20 @@ use pomelo_kernel::{
 };
 
 #[no_mangle]
-pub extern "C" fn kernel_main(arg: KernelArg) -> ! {
-    main(arg).expect("What happened???")
+pub extern "sysv64" fn kernel_main(boot_info: BootInfo) {
+    // Just to make sure this function has the expected type signature.
+    let _: pomelo_common::KernelMain = kernel_main;
+    main(boot_info).expect("What happened???")
 }
 
-fn initialize(arg: &KernelArg) -> Result<()> {
-    screen::initialize(&arg.graphic_config);
+fn initialize(boot_info: &BootInfo) -> Result<()> {
+    screen::initialize(boot_info.graphic_config());
     logger::initialize(log::LevelFilter::Warn)?;
     write_desktop();
     gdt::initialize();
     interrupts::initialize();
-    console::initialize(&arg.graphic_config);
-    mouse::initialize(&arg.graphic_config);
+    console::initialize(boot_info.graphic_config());
+    mouse::initialize(boot_info.graphic_config());
     Ok(())
 }
 
@@ -58,8 +60,8 @@ fn write_desktop() {
     );
 }
 
-fn main(arg: KernelArg) -> Result<!> {
-    initialize(&arg)?;
+fn main(boot_info: BootInfo) -> Result<!> {
+    initialize(&boot_info)?;
     println!("Welcome to Pomelo OS");
     let xhc = pci::scan_devices()
         .flat_map(|device| device.scan_functions())
