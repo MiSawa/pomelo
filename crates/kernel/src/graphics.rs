@@ -1,6 +1,10 @@
+use self::canvas::Canvas;
+
+mod buffer;
 pub mod canvas;
-pub mod console;
+pub mod layer;
 pub mod screen;
+pub mod widgets;
 
 pub type ICoordinate = i32;
 pub type UCoordinate = u32;
@@ -42,6 +46,14 @@ impl core::ops::Add<Vector2d> for Point {
 
     fn add(self, rhs: Vector2d) -> Self::Output {
         Self::Output::new(self.x + rhs.x, self.y + rhs.y)
+    }
+}
+
+impl core::ops::Sub<Vector2d> for Point {
+    type Output = Point;
+
+    fn sub(self, rhs: Vector2d) -> Self::Output {
+        Self::Output::new(self.x - rhs.x, self.y - rhs.y)
     }
 }
 
@@ -145,6 +157,10 @@ impl Rectangle {
     pub fn ys(&self) -> impl Iterator<Item = ICoordinate> {
         self.min_y()..self.max_y()
     }
+    pub fn points(&self) -> impl Iterator<Item = Point> + '_ {
+        self.ys()
+            .flat_map(|y| self.xs().map(move |x| Point { x, y }))
+    }
     #[must_use]
     pub fn intersection(&self, other: &Self) -> Self {
         let min_x = self.min_x().max(other.min_x());
@@ -165,6 +181,14 @@ impl Rectangle {
     }
 }
 
+impl core::ops::Add<Vector2d> for Rectangle {
+    type Output = Rectangle;
+
+    fn add(self, rhs: Vector2d) -> Self::Output {
+        Self::Output::new(self.top_left + rhs, self.size)
+    }
+}
+
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Default)]
 pub struct Color {
     pub r: u8,
@@ -182,4 +206,9 @@ impl Color {
     pub const fn new(r: u8, g: u8, b: u8) -> Self {
         Self { r, g, b }
     }
+}
+
+pub trait Draw {
+    fn size(&self) -> Size;
+    fn draw<C: Canvas>(&self, canvas: &mut C);
 }

@@ -3,13 +3,16 @@
 #![feature(never_type)]
 #![feature(asm_sym)]
 #![feature(maybe_uninit_uninit_array)]
+#![feature(alloc_error_handler)]
 
 use core::{arch::asm, mem::MaybeUninit};
 use pomelo_common::BootInfo;
 
 use pomelo_kernel::{
     allocator, events, gdt,
-    graphics::{canvas::Canvas, console, screen, Color, Rectangle, Size, DESKTOP_BG_COLOR},
+    graphics::{
+        canvas::Canvas, layer::{self, LayerManager}, screen, widgets::console, Color, Rectangle, Size, DESKTOP_BG_COLOR,
+    },
     interrupts::{self, InterruptIndex},
     logger, mouse,
     msi::{configure_msi_fixed_destination, DeliveryMode, TriggerMode},
@@ -50,15 +53,17 @@ pub extern "sysv64" fn stack_tricked(boot_info: &BootInfo) {
 }
 
 fn initialize(boot_info: &BootInfo) -> Result<()> {
-    screen::initialize(boot_info.graphic_config());
-    logger::initialize(log::LevelFilter::Warn)?;
-    write_desktop();
-
     paging::initialize();
     allocator::initialize(boot_info.memory_mapping());
+    screen::initialize(boot_info.graphic_config());
+    console::initialize(boot_info.graphic_config());
+    logger::initialize(log::LevelFilter::Info)?;
+
+    // let mut layer_manager = layer::initialize(&boot_info.graphic_config());
+    // layer_manager.add()
+    write_desktop();
     gdt::initialize();
     interrupts::initialize();
-    console::initialize(boot_info.graphic_config());
     mouse::initialize(boot_info.graphic_config());
     Ok(())
 }
@@ -123,6 +128,16 @@ fn main(boot_info: &BootInfo) -> Result<!> {
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
     println!("I'm panicked!!!! {}", info);
+    #[allow(clippy::empty_loop)]
+    loop {
+        x86_64::instructions::hlt()
+    }
+}
+
+#[cfg(not(test))]
+#[alloc_error_handler]
+fn alloc_error(info: core::alloc::Layout) -> ! {
+    println!("Alloc error!! {:?}", info);
     #[allow(clippy::empty_loop)]
     loop {
         x86_64::instructions::hlt()

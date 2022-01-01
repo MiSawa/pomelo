@@ -1,5 +1,10 @@
 use crate::graphics::{Color, ICoordinate, Point, Rectangle, Size, UCoordinate};
 
+use super::{
+    buffer::{BufferCanvas, ByteBuffer},
+    Vector2d,
+};
+
 pub const GLYPH_HEIGHT: UCoordinate = 16;
 pub const GLYPH_WIDTH: UCoordinate = 8;
 
@@ -15,12 +20,27 @@ pub trait Canvas {
         Rectangle::new(Point::zero(), self.size())
     }
 
-    fn draw_pixel(&mut self, color: Color, p: Point);
-    fn fill_rectangle(&mut self, color: Color, rectangle: &Rectangle) {
-        for y in rectangle.ys() {
-            for x in rectangle.xs() {
-                self.draw_pixel(color, Point::new(x, y))
+    fn draw_pixel_unchecked(&mut self, color: Color, p: Point);
+
+    fn draw_pixel(&mut self, color: Color, p: Point) {
+        if self.bounding_box().contains(&p) {
+            self.draw_pixel_unchecked(color, p);
+        }
+    }
+
+    fn draw_buffer(&mut self, p: Vector2d, buffer: &BufferCanvas<impl ByteBuffer>) {
+        let rectangle = (buffer.bounding_box() + p).intersection(&self.bounding_box());
+        for q in rectangle.points() {
+            if let Some(c) = buffer.get_color(q - p) {
+                self.draw_pixel_unchecked(c, q);
             }
+        }
+    }
+
+    fn fill_rectangle(&mut self, color: Color, rectangle: &Rectangle) {
+        let actual = self.bounding_box().intersection(&rectangle);
+        for p in actual.points() {
+            self.draw_pixel_unchecked(color, p)
         }
     }
     fn draw_char(&mut self, color: Color, p: Point, c: char) -> UCoordinate {

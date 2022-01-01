@@ -1,10 +1,14 @@
 #[repr(C)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub enum PixelFormat {
     Rgb,
     Bgr,
 }
 
 impl PixelFormat {
+    pub const fn bytes_per_pixel(&self) -> usize {
+        4
+    }
     pub fn r_offset(&self) -> u8 {
         match self {
             PixelFormat::Rgb => 0,
