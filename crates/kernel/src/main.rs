@@ -8,10 +8,10 @@ use core::{arch::asm, mem::MaybeUninit};
 use pomelo_common::BootInfo;
 
 use pomelo_kernel::{
-    events, gdt,
+    allocator, events, gdt,
     graphics::{canvas::Canvas, console, screen, Color, Rectangle, Size, DESKTOP_BG_COLOR},
     interrupts::{self, InterruptIndex},
-    logger, memory_manager, mouse,
+    logger, mouse,
     msi::{configure_msi_fixed_destination, DeliveryMode, TriggerMode},
     paging, pci,
     prelude::*,
@@ -23,7 +23,7 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) {
     // Just to make sure this function has the expected type signature.
     let _: pomelo_common::KernelMain = kernel_main;
 
-    const KERNEL_MAIN_STACK_SIZE: usize = 1024 * 1024;
+    const KERNEL_MAIN_STACK_SIZE: usize = 32 * 1024 * 1024;
     #[repr(align(16))]
     struct Aligned([MaybeUninit<u8>; KERNEL_MAIN_STACK_SIZE]);
     static KERNEL_MAIN_STACK: Aligned = Aligned(MaybeUninit::uninit_array());
@@ -50,11 +50,12 @@ pub extern "sysv64" fn stack_tricked(boot_info: &BootInfo) {
 }
 
 fn initialize(boot_info: &BootInfo) -> Result<()> {
-    paging::initialize();
-    memory_manager::initialize(boot_info.memory_mapping());
     screen::initialize(boot_info.graphic_config());
     logger::initialize(log::LevelFilter::Warn)?;
     write_desktop();
+
+    paging::initialize();
+    allocator::initialize(boot_info.memory_mapping());
     gdt::initialize();
     interrupts::initialize();
     console::initialize(boot_info.graphic_config());

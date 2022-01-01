@@ -1,11 +1,12 @@
 use lazy_static::lazy_static;
-use spin::Mutex;
+use spinning_top::Spinlock;
 use x86_64::instructions::interrupts;
 
 use crate::{prelude::*, ring_buffer::ArrayRingBuffer, xhci};
 
 lazy_static! {
-    static ref GLOAL_QUEUE: Mutex<ArrayRingBuffer<Event, 1024>> = Mutex::new(Default::default());
+    static ref GLOAL_QUEUE: Spinlock<ArrayRingBuffer<Event, 1024>> =
+        Spinlock::new(Default::default());
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]

@@ -1,11 +1,11 @@
 use delegate::delegate;
 use pomelo_common::graphics::GraphicConfig;
-use spin::Mutex;
+use spinning_top::{MappedSpinlockGuard, Spinlock, SpinlockGuard};
 
 use crate::graphics::{canvas::Canvas, Color, ICoordinate, Point, Rectangle, Size, UCoordinate};
 
 lazy_static! {
-    static ref SCREEN: Mutex<Option<ScreenRaw>> = Mutex::new(Option::None);
+    static ref SCREEN: Spinlock<Option<ScreenRaw>> = Spinlock::new(Option::None);
 }
 
 pub fn initialize(graphic_config: &GraphicConfig) {
@@ -87,20 +87,23 @@ impl Canvas for ScreenRaw {
 }
 
 pub struct ScreenLock<'a> {
-    locked: spin::mutex::MutexGuard<'a, Option<ScreenRaw>>,
+    locked: MappedSpinlockGuard<'a, ScreenRaw>,
 }
 impl<'a> ScreenLock<'a> {
     fn new() -> Self {
         let locked = SCREEN.lock();
-        Self { locked }
+        let mapped = SpinlockGuard::map(locked, |screen| {
+            screen.as_mut().expect("Screen should be initialized")
+        });
+        Self { locked: mapped }
     }
 
     fn unwrap(&self) -> &ScreenRaw {
-        self.locked.as_ref().expect("Screen should be initialized")
+        &self.locked
     }
 
     fn unwrap_mut(&mut self) -> &mut ScreenRaw {
-        self.locked.as_mut().expect("Screen should be initialized")
+        &mut self.locked
     }
 }
 

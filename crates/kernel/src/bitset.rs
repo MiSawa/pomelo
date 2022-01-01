@@ -1,37 +1,56 @@
+trait BlockExt
+where
+    Self: Sized + core::ops::Shl<usize, Output = Self>,
+{
+    const BITS: usize;
+    const ONE: Self;
+    const NOBIT: Self;
+    const ALLBITS: Self;
+    const SHIFT: usize = Self::BITS.trailing_zeros() as usize;
+    const MASK: usize = (1 << Self::SHIFT) - 1;
+
+    fn get_bit(index: usize) -> Self {
+        Self::ONE << index
+    }
+}
+
 type Block = u64;
+impl BlockExt for Block {
+    const BITS: usize = Self::BITS as usize;
+    const ONE: Self = 1;
+    const NOBIT: Self = 0;
+    const ALLBITS: Self = u64::MAX;
+}
+
 pub struct BitSet<const N: usize>
 where
-    [Block; N.div_ceil(Block::BITS as usize)]: Sized,
+    [(); 1 + N.div_ceil(Block::BITS as usize)]: Sized,
 {
-    blocks: [Block; N.div_ceil(Block::BITS as usize)],
+    blocks: [Block; 1 + N.div_ceil(Block::BITS as usize)],
 }
 
 impl<const N: usize> Default for BitSet<N>
 where
-    [Block; N.div_ceil(Block::BITS as usize)]: Sized,
+    [(); 1 + N.div_ceil(Block::BITS as usize)]: Sized,
 {
     fn default() -> Self {
         Self::new()
     }
 }
 
+#[allow(dead_code)]
 impl<const N: usize> BitSet<N>
 where
-    [Block; N.div_ceil(Block::BITS as usize)]: Sized,
+    [(); 1 + N.div_ceil(Block::BITS as usize)]: Sized,
 {
-    const ALLZERO: Block = 0;
-    const ALLONE: Block = Block::MAX;
-    const SHIFT: usize = Block::BITS.trailing_zeros() as usize;
-    const MASK: usize = !((1 << Self::SHIFT) - 1);
-
     pub const fn new() -> Self {
         Self {
-            blocks: [Self::ALLZERO; N.div_ceil(Block::BITS as usize)],
+            blocks: [Block::NOBIT; 1 + N.div_ceil(Block::BITS as usize)],
         }
     }
 
     fn unpack_index(i: usize) -> (usize, usize) {
-        (i >> Self::SHIFT, i & Self::MASK)
+        (i >> Block::SHIFT, i & Block::MASK)
     }
     fn canonicalize_range<R: core::ops::RangeBounds<usize>>(range: R) -> (usize, usize) {
         let s = match range.start_bound() {
@@ -44,8 +63,7 @@ where
             core::ops::Bound::Excluded(&i) => i,
             core::ops::Bound::Unbounded => N,
         };
-        assert!(0 <= s);
-        assert!(s < t);
+        assert!(s <= t);
         assert!(t <= N);
         (s, t)
     }
@@ -53,19 +71,19 @@ where
     pub fn contains(&mut self, i: usize) -> bool {
         assert!(i < N);
         let (u, l) = Self::unpack_index(i);
-        (self.blocks[u] >> l) & 1 == 1
+        self.blocks[u] & Block::get_bit(l) != Block::NOBIT
     }
 
     pub fn insert(&mut self, i: usize) {
         assert!(i < N);
         let (u, l) = Self::unpack_index(i);
-        self.blocks[u] |= 1 << l;
+        self.blocks[u] |= Block::get_bit(l);
     }
 
     pub fn remove(&mut self, i: usize) {
         assert!(i < N);
         let (u, l) = Self::unpack_index(i);
-        self.blocks[u] &= !(1 << l);
+        self.blocks[u] &= !Block::get_bit(l);
     }
 
     pub fn insert_range<R: core::ops::RangeBounds<usize>>(&mut self, range: R) {
@@ -73,11 +91,11 @@ where
         let (us, ls) = Self::unpack_index(s);
         let (ut, lt) = Self::unpack_index(t);
         if us == ut {
-            self.blocks[us] |= (Self::ALLONE << ls) & !(Self::ALLONE << lt);
+            self.blocks[us] |= (Block::ALLBITS << ls) & !(Block::ALLBITS << lt);
         } else {
-            self.blocks[us] |= Self::ALLONE << ls;
-            self.blocks[ut] |= !(Self::ALLONE << lt);
-            self.blocks[(us + 1)..ut].fill(Self::ALLONE);
+            self.blocks[us] |= Block::ALLBITS << ls;
+            self.blocks[ut] |= !(Block::ALLBITS << lt);
+            self.blocks[(us + 1)..ut].fill(Block::ALLBITS);
         }
     }
 
@@ -86,11 +104,11 @@ where
         let (us, ls) = Self::unpack_index(s);
         let (ut, lt) = Self::unpack_index(t);
         if us == ut {
-            self.blocks[us] &= (!(Self::ALLONE << ls)) | (Self::ALLONE << lt);
+            self.blocks[us] &= (!(Block::ALLBITS << ls)) | (Block::ALLBITS << lt);
         } else {
-            self.blocks[us] &= !(Self::ALLONE << ls);
-            self.blocks[ut] &= Self::ALLONE << lt;
-            self.blocks[(us + 1)..ut].fill(Self::ALLZERO);
+            self.blocks[us] &= !(Block::ALLBITS << ls);
+            self.blocks[ut] &= Block::ALLBITS << lt;
+            self.blocks[(us + 1)..ut].fill(Block::NOBIT);
         }
     }
 }

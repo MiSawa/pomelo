@@ -1,11 +1,11 @@
 use mikanos_usb;
-use spin::Mutex;
+use spinning_top::Spinlock;
 
 use crate::{mouse, pci};
 
 lazy_static! {
-    static ref XHC: Mutex<Option<&'static mut mikanos_usb::xhci::Controller>> =
-        Mutex::new(Option::None);
+    static ref XHC: Spinlock<Option<&'static mut mikanos_usb::xhci::Controller>> =
+        Spinlock::new(Option::None);
 }
 
 /// Assumes the given func is a xHC, or panic.

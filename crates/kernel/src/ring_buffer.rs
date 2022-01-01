@@ -4,6 +4,7 @@ use core::mem::MaybeUninit;
 pub struct FullError<T> {
     element: T,
 }
+#[allow(dead_code)]
 impl<T> FullError<T> {
     pub const fn new(element: T) -> Self {
         Self { element }
@@ -30,6 +31,7 @@ impl<T, const N: usize> Default for ArrayRingBuffer<T, N> {
     }
 }
 
+#[allow(dead_code)]
 impl<T, const N: usize> ArrayRingBuffer<T, N> {
     pub const fn new() -> Self {
         Self {

@@ -16,7 +16,7 @@
     "ld.lld": [
       "--entry", "kernel_main",
       "-z", "norelro",
-      "--image-base", "0x100000",
+      "--image-base", "0x01400000",
       "--static"
     ]
   }

@@ -1,40 +1,54 @@
 use pomelo_common::memory_mapping::{MemoryMapping, MemoryType};
-use spin::Mutex;
+use spinning_top::{MappedSpinlockGuard, Spinlock, SpinlockGuard};
 use x86_64::{
     structures::paging::{
         frame::{PhysFrame, PhysFrameRange},
         page::{PageSize, Size1GiB, Size4KiB},
+        FrameAllocator, FrameDeallocator,
     },
     PhysAddr,
 };
 
 use crate::bitset::BitSet;
 
-type FrameSize = Size4KiB;
+pub type FrameSize = Size4KiB;
 const UEFI_PAGE_SIZE: usize = 4096;
 const MAX_PHYSICAL_MEMORY_SIZE: usize = 128 * Size1GiB::SIZE as usize;
 const NUM_FRAMES: usize = MAX_PHYSICAL_MEMORY_SIZE.div_floor(FrameSize::SIZE as usize);
-static MEMORY_MANAGER: Mutex<BitmapMemoryManager> =
-    Mutex::new(BitmapMemoryManager::all_allocated());
+static MEMORY_MANAGER: Spinlock<Option<BitmapMemoryManager>> = Spinlock::new(None);
 
-pub fn initialize(memory_mapping: &MemoryMapping) {
-    let mut mm = MEMORY_MANAGER.lock();
-    for descriptor in memory_mapping.iter() {
-        if is_available_type(descriptor.ty) {
-            let start = PhysAddr::new_truncate(descriptor.phys_start);
-            let end = PhysAddr::new_truncate(
-                start.as_u64() + descriptor.page_count * (UEFI_PAGE_SIZE as u64),
-            );
-            let range = PhysFrame::<FrameSize>::range(
-                PhysFrame::containing_address(start.align_up(FrameSize::SIZE)),
-                PhysFrame::containing_address(end),
-            );
-            mm.free(range);
-        }
-    }
+pub(crate) fn initialize(
+    memory_mapping: &MemoryMapping,
+) -> MappedSpinlockGuard<BitmapMemoryManager> {
+    SpinlockGuard::map(MEMORY_MANAGER.lock(), |locked| {
+        locked.get_or_insert_with(|| {
+            let mut mm = BitmapMemoryManager::all_allocated();
+            for descriptor in memory_mapping.iter() {
+                if is_available_type(descriptor.ty) {
+                    let start = PhysAddr::new_truncate(u64::min(
+                        descriptor.phys_start,
+                        MAX_PHYSICAL_MEMORY_SIZE as u64,
+                    ));
+                    let end = PhysAddr::new_truncate(u64::min(
+                        start.as_u64() + descriptor.page_count * (UEFI_PAGE_SIZE as u64),
+                        MAX_PHYSICAL_MEMORY_SIZE as u64,
+                    ));
+                    let range = PhysFrame::<FrameSize>::range(
+                        PhysFrame::containing_address(start.align_up(FrameSize::SIZE)),
+                        PhysFrame::containing_address(end),
+                    );
+                    if range.is_empty() {
+                        continue;
+                    }
+                    mm.free(range);
+                }
+            }
+            mm
+        })
+    })
 }
 
-struct BitmapMemoryManager {
+pub(crate) struct BitmapMemoryManager {
     /// 0 -> unavailable, 1 -> available
     bitset: BitSet<NUM_FRAMES>,
 }
@@ -67,6 +81,17 @@ impl BitmapMemoryManager {
         let start = (range.start.start_address().as_u64() / FrameSize::SIZE) as usize;
         let end = (range.end.start_address().as_u64() / FrameSize::SIZE) as usize;
         self.bitset.insert_range(start..end);
+    }
+}
+
+unsafe impl FrameAllocator<FrameSize> for BitmapMemoryManager {
+    fn allocate_frame(&mut self) -> Option<PhysFrame<FrameSize>> {
+        self.allocate(1).map(|r| r.start)
+    }
+}
+impl FrameDeallocator<FrameSize> for BitmapMemoryManager {
+    unsafe fn deallocate_frame(&mut self, frame: PhysFrame<FrameSize>) {
+        self.free(PhysFrame::range(frame, frame + 1));
     }
 }
 

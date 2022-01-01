@@ -9,6 +9,7 @@
 #[macro_use]
 extern crate lazy_static;
 
+pub mod allocator;
 pub(crate) mod bitset;
 mod cxx_support;
 pub mod events;
@@ -16,7 +17,7 @@ pub mod gdt;
 pub mod graphics;
 pub mod interrupts;
 pub mod logger;
-pub mod memory_manager;
+pub(crate) mod memory_manager;
 pub mod mouse;
 pub mod msi;
 pub mod paging;

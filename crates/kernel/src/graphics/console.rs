@@ -3,7 +3,7 @@ const COLUMNS: usize = 160;
 
 use arrayvec::{ArrayString, ArrayVec};
 use pomelo_common::graphics::GraphicConfig;
-use spin::Mutex;
+use spinning_top::Spinlock;
 
 use crate::graphics::{
     self,
@@ -13,7 +13,7 @@ use crate::graphics::{
 };
 
 lazy_static! {
-    static ref GLOBAL_CONSOLE: Mutex<Option<Console<Screen>>> = Mutex::new(Option::None);
+    static ref GLOBAL_CONSOLE: Spinlock<Option<Console<Screen>>> = Spinlock::new(Option::None);
 }
 
 pub fn initialize(graphic_config: &GraphicConfig) {

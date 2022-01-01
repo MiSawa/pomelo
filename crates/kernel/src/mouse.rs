@@ -1,5 +1,5 @@
 use pomelo_common::graphics::GraphicConfig;
-use spin::Mutex;
+use spinning_top::Spinlock;
 
 use crate::{
     graphics::{canvas::Canvas, screen, Color, DESKTOP_BG_COLOR},
@@ -7,7 +7,7 @@ use crate::{
 };
 
 lazy_static! {
-    static ref MOUSE_CURSOR: Mutex<Option<MouseCursor>> = Mutex::new(Option::None);
+    static ref MOUSE_CURSOR: Spinlock<Option<MouseCursor>> = Spinlock::new(Option::None);
 }
 
 pub fn initialize(graphic_config: &GraphicConfig) {
