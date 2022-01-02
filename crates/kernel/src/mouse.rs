@@ -1,86 +1,58 @@
-use pomelo_common::graphics::GraphicConfig;
 use spinning_top::Spinlock;
 
 use crate::{
-    graphics::{canvas::Canvas, screen, Color, DESKTOP_BG_COLOR},
+    graphics::{canvas::Canvas, layer::LayerManager, widgets::Widget, Color, Draw},
     prelude::*,
 };
 
 lazy_static! {
-    static ref MOUSE_CURSOR: Spinlock<Option<MouseCursor>> = Spinlock::new(Option::None);
+    static ref MOUSE_CURSOR: Spinlock<Option<Widget<MouseCursor>>> = Spinlock::new(Option::None);
 }
 
-pub fn initialize(graphic_config: &GraphicConfig) {
-    screen::initialize(graphic_config);
-    let screen_size = screen::screen().size();
+const HEIGHT: usize = 24;
+const WIDTH: usize = 15;
+const TRANSPARENT_COLOR: Color = Color::new(1, 2, 3);
+
+pub fn initialize(layer_manager: &mut LayerManager) {
     MOUSE_CURSOR.lock().get_or_insert_with(|| {
-        let mut cursor = MouseCursor::new(Point::new(400, 400), screen_size);
-        cursor.move_relative(Vector2d::zero());
-        cursor
+        let cursor = MouseCursor;
+        let mut widget = layer_manager.add(cursor);
+        widget.move_relative(Vector2d::new(200, 200));
+        widget.set_transparent_color(Some(TRANSPARENT_COLOR));
+        widget
     });
 }
 
 pub extern "C" fn observe_cursor_move(x: i8, y: i8) {
     log::info!("Mouse event!");
     let mut cursor = MOUSE_CURSOR.lock();
-    let cursor = cursor.as_mut().expect("Mouse cursor should be initialized");
-    cursor.move_relative(Vector2d::new(x as ICoordinate, y as ICoordinate));
-}
-
-struct MouseCursor {
-    position: Point,
-    screen_size: Size,
-}
-impl MouseCursor {
-    fn new(position: Point, screen_size: Size) -> Self {
-        Self {
-            position,
-            screen_size,
-        }
-    }
-
-    fn move_relative(&mut self, v: Vector2d) {
-        let screen = screen::screen();
-        erase_mouse_cursor(&mut screen.lock(), self.position);
-        self.position += v;
-        self.position.x = self.position.x.clamp(0, self.screen_size.x as ICoordinate);
-        self.position.y = self.position.y.clamp(0, self.screen_size.y as ICoordinate);
-        render_mouse_cursor(&mut screen.lock(), self.position);
+    if let Some(cursor) = cursor.as_mut() {
+        cursor.move_relative(Vector2d::new(x as ICoordinate, y as ICoordinate));
     }
 }
 
-fn render_mouse_cursor(canvas: &mut impl Canvas, p: Point) {
-    for (y, row) in MOUSE_CURSOR_SHAPE.iter().enumerate() {
-        for (x, cell) in row.iter().enumerate() {
-            let color = match cell {
-                b'@' => Color::BLACK,
-                b'.' => Color::WHITE,
-                _ => continue,
-            };
-            canvas.draw_pixel(
-                color,
-                Point::new(p.x + x as ICoordinate, p.y + y as ICoordinate),
-            );
+struct MouseCursor;
+
+impl Draw for MouseCursor {
+    fn size(&self) -> Size {
+        Size::new(WIDTH as UCoordinate, HEIGHT as UCoordinate)
+    }
+
+    fn draw<C: Canvas>(&self, canvas: &mut C) {
+        for (y, row) in MOUSE_CURSOR_SHAPE.iter().enumerate() {
+            for (x, cell) in row.iter().enumerate() {
+                let color = match cell {
+                    b'@' => Color::BLACK,
+                    b'.' => Color::WHITE,
+                    _ => TRANSPARENT_COLOR,
+                };
+                canvas.draw_pixel(color, Point::new(x as ICoordinate, y as ICoordinate));
+            }
         }
     }
 }
 
-fn erase_mouse_cursor(canvas: &mut impl Canvas, p: Point) {
-    for (y, row) in MOUSE_CURSOR_SHAPE.iter().enumerate() {
-        for (x, cell) in row.iter().enumerate() {
-            let color = match cell {
-                b'@' | b'.' => DESKTOP_BG_COLOR,
-                _ => continue,
-            };
-            canvas.draw_pixel(
-                color,
-                Point::new(p.x + x as ICoordinate, p.y + y as ICoordinate),
-            );
-        }
-    }
-}
-
-const MOUSE_CURSOR_SHAPE: [[u8; 15]; 24] = [
+const MOUSE_CURSOR_SHAPE: [[u8; WIDTH]; HEIGHT] = [
     *b"@              ",
     *b"@@             ",
     *b"@.@            ",

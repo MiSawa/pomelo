@@ -36,5 +36,5 @@ pub struct GraphicConfig {
     pub pixel_format: PixelFormat,
     pub horisontal_resolution: usize,
     pub vertical_resolution: usize,
-    pub stride: usize,
+    pub pixels_per_row: usize,
 }

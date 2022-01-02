@@ -28,17 +28,17 @@ pub trait Canvas {
         }
     }
 
-    fn draw_buffer(&mut self, p: Vector2d, buffer: &BufferCanvas<impl ByteBuffer>) {
-        let rectangle = (buffer.bounding_box() + p).intersection(&self.bounding_box());
-        for q in rectangle.points() {
-            if let Some(c) = buffer.get_color(q - p) {
-                self.draw_pixel_unchecked(c, q);
+    fn draw_buffer(&mut self, v: Vector2d, buffer: &BufferCanvas<impl ByteBuffer>) {
+        let rectangle = (buffer.bounding_box() + v).intersection(&self.bounding_box());
+        for p in rectangle.points() {
+            if let Some(c) = buffer.get_color(p - v) {
+                self.draw_pixel_unchecked(c, p);
             }
         }
     }
 
     fn fill_rectangle(&mut self, color: Color, rectangle: &Rectangle) {
-        let actual = self.bounding_box().intersection(&rectangle);
+        let actual = self.bounding_box().intersection(rectangle);
         for p in actual.points() {
             self.draw_pixel_unchecked(color, p)
         }

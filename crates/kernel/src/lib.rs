@@ -16,6 +16,7 @@ mod cxx_support;
 pub mod events;
 pub mod gdt;
 pub mod graphics;
+pub mod gui;
 pub mod interrupts;
 pub mod logger;
 pub(crate) mod memory_manager;
@@ -38,7 +39,7 @@ macro_rules! println {
 }
 
 pub fn _print_impl(args: ::core::fmt::Arguments) {
-    use ::core::fmt::Write;
+    use core::fmt::Write;
     let mut writer = crate::graphics::widgets::console::global_console();
     writer.write_fmt(args).unwrap();
 }

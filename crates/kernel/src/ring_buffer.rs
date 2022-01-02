@@ -66,6 +66,42 @@ impl<T, const N: usize> ArrayRingBuffer<T, N> {
         self.r = 0;
     }
 
+    pub fn back(&self) -> Option<&T> {
+        if self.is_empty() {
+            None
+        } else {
+            let i = self.r - 1;
+            let i = if i >= N { i - N } else { i };
+            Some(unsafe { self.buffer[i].assume_init_ref() })
+        }
+    }
+
+    pub fn back_mut(&mut self) -> Option<&mut T> {
+        if self.is_empty() {
+            None
+        } else {
+            let i = self.r - 1;
+            let i = if i >= N { i - N } else { i };
+            Some(unsafe { self.buffer[i].assume_init_mut() })
+        }
+    }
+
+    pub fn front(&self) -> Option<&T> {
+        if self.is_empty() {
+            None
+        } else {
+            Some(unsafe { self.buffer[self.l].assume_init_ref() })
+        }
+    }
+
+    pub fn front_mut(&mut self) -> Option<&mut T> {
+        if self.is_empty() {
+            None
+        } else {
+            Some(unsafe { self.buffer[self.l].assume_init_mut() })
+        }
+    }
+
     /// ***Panics*** if the buffer is already full.
     pub fn push_back(&mut self, element: T) {
         self.try_push_back(element)
@@ -134,5 +170,15 @@ impl<T, const N: usize> ArrayRingBuffer<T, N> {
         // SAFETY: This slot should be occupied.
         let ret = unsafe { ret.assume_init() };
         Some(ret)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &'_ T> {
+        (self.l..self.r).map(|i| {
+            if i < N {
+                unsafe { self.buffer[i].assume_init_ref() }
+            } else {
+                unsafe { self.buffer[i - N].assume_init_ref() }
+            }
+        })
     }
 }

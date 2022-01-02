@@ -8,8 +8,8 @@ pub mod widgets;
 
 pub type ICoordinate = i32;
 pub type UCoordinate = u32;
-pub const DESKTOP_BG_COLOR: Color = Color::new(45, 118, 237);
 pub const DESKTOP_FG_COLOR: Color = Color::BLACK;
+pub const DESKTOP_BG_COLOR: Color = Color::new(45, 118, 237);
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Default)]
 pub struct Point {
@@ -210,5 +210,8 @@ impl Color {
 
 pub trait Draw {
     fn size(&self) -> Size;
+    fn bounding_box(&self) -> Rectangle {
+        Rectangle::new(Point::zero(), self.size())
+    }
     fn draw<C: Canvas>(&self, canvas: &mut C);
 }

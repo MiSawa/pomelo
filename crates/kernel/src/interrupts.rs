@@ -38,8 +38,7 @@ fn end_of_interrupt() {
 }
 
 extern "x86-interrupt" fn interrupt_handler_xhci(_stack_frame: InterruptStackFrame) {
-    use crate::events::{enque, Event};
-    enque(Event::XHCI);
+    crate::events::fire_xhci();
     end_of_interrupt()
 }
 

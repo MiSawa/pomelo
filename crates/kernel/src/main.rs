@@ -10,11 +10,9 @@ use pomelo_common::BootInfo;
 
 use pomelo_kernel::{
     allocator, events, gdt,
-    graphics::{
-        canvas::Canvas, layer::{self, LayerManager}, screen, widgets::console, Color, Rectangle, Size, DESKTOP_BG_COLOR,
-    },
+    gui::{self, GUI},
     interrupts::{self, InterruptIndex},
-    logger, mouse,
+    logger,
     msi::{configure_msi_fixed_destination, DeliveryMode, TriggerMode},
     paging, pci,
     prelude::*,
@@ -52,51 +50,19 @@ pub extern "sysv64" fn stack_tricked(boot_info: &BootInfo) {
     main(boot_info).expect("What happened???")
 }
 
-fn initialize(boot_info: &BootInfo) -> Result<()> {
+fn initialize(boot_info: &BootInfo) -> Result<GUI> {
     paging::initialize();
     allocator::initialize(boot_info.memory_mapping());
-    screen::initialize(boot_info.graphic_config());
-    console::initialize(boot_info.graphic_config());
-    logger::initialize(log::LevelFilter::Info)?;
-
-    // let mut layer_manager = layer::initialize(&boot_info.graphic_config());
-    // layer_manager.add()
-    write_desktop();
     gdt::initialize();
+    logger::initialize(log::LevelFilter::Debug)?;
+    let mut gui = gui::create_gui(boot_info.graphic_config());
+    gui.render();
     interrupts::initialize();
-    mouse::initialize(boot_info.graphic_config());
-    Ok(())
-}
-
-fn write_desktop() {
-    let mut screen = screen::screen();
-    let screen_size = screen.size();
-    screen.fill_rectangle(DESKTOP_BG_COLOR, &screen.bounding_box());
-    screen.fill_rectangle(
-        Color::new(1, 8, 17),
-        &Rectangle::new(
-            Point::new(0, screen_size.y as ICoordinate - 50),
-            Size::new(screen_size.x, 50),
-        ),
-    );
-    screen.fill_rectangle(
-        Color::new(80, 80, 80),
-        &Rectangle::new(
-            Point::new(0, screen_size.y as ICoordinate - 50),
-            Size::new(screen_size.x / 5, 50),
-        ),
-    );
-    screen.fill_rectangle(
-        Color::new(160, 160, 160),
-        &Rectangle::new(
-            Point::new(10, screen_size.y as ICoordinate - 40),
-            Size::new(30, 30),
-        ),
-    );
+    Ok(gui)
 }
 
 fn main(boot_info: &BootInfo) -> Result<!> {
-    initialize(boot_info)?;
+    let gui = initialize(boot_info)?;
     println!("Welcome to Pomelo OS");
     let xhc = pci::scan_devices()
         .flat_map(|device| device.scan_functions())
@@ -121,7 +87,7 @@ fn main(boot_info: &BootInfo) -> Result<!> {
 
     xhci::initialize(&xhc);
     log::info!("Initialized xhci");
-    events::event_loop()
+    events::event_loop(gui)
 }
 
 #[cfg(not(test))]

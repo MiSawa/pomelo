@@ -124,7 +124,7 @@ fn read_graphic_config(st: &mut SystemTable<Boot>) -> Result<GraphicConfig> {
         .map_err(|_| anyhow!("Unable to set mode"))?;
     let info = mode.info();
     let (horisontal_resolution, vertical_resolution) = info.resolution();
-    let stride = info.stride();
+    let pixels_per_row = info.stride();
 
     let mut fb = go.frame_buffer();
     let config = GraphicConfig {
@@ -133,7 +133,7 @@ fn read_graphic_config(st: &mut SystemTable<Boot>) -> Result<GraphicConfig> {
         pixel_format,
         horisontal_resolution,
         vertical_resolution,
-        stride,
+        pixels_per_row,
     };
     Ok(config)
 }
