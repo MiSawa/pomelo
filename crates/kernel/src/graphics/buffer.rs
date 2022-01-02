@@ -27,27 +27,6 @@ impl<const N: usize> ByteBuffer for [u8; N] {
     }
 }
 
-pub type FixedSizeBufferCanvas<const N: usize> = BufferCanvas<[u8; N]>;
-
-pub fn new_fixed_size_buffer_canvas<const N: usize>(
-    pixel_format: PixelFormat,
-    size: Size,
-) -> FixedSizeBufferCanvas<N>
-where
-    [(); N]: Sized,
-{
-    FixedSizeBufferCanvas::<N> {
-        buffer: [0; N],
-        pixel_format,
-        r_offset: pixel_format.r_offset(),
-        g_offset: pixel_format.g_offset(),
-        b_offset: pixel_format.b_offset(),
-        size,
-        bytes_per_row: size.x as usize * pixel_format.bytes_per_pixel(),
-        transparent_color: None,
-    }
-}
-
 pub struct BufferCanvas<B> {
     buffer: B,
     pixel_format: PixelFormat,

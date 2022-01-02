@@ -181,4 +181,43 @@ impl<T, const N: usize> ArrayRingBuffer<T, N> {
             }
         })
     }
+
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut T> {
+        fn unwrapper<T>(v: &mut MaybeUninit<T>) -> &mut T {
+            unsafe { v.assume_init_mut() }
+        }
+        if self.r > N {
+            let (ab, c) = self.buffer.split_at_mut(self.l);
+            let (a, _b) = ab.split_at_mut(self.r - N);
+            a.iter_mut().chain(c).map(unwrapper)
+        } else {
+            let (ab, _c) = self.buffer.split_at_mut(self.r);
+            let (a, b) = ab.split_at_mut(self.l);
+            let (empty, _) = a.split_at_mut(0);
+            b.iter_mut().chain(empty).map(unwrapper)
+        }
+    }
+}
+
+impl<T, const N: usize> core::ops::Index<usize> for ArrayRingBuffer<T, N> {
+    type Output = T;
+    fn index(&self, index: usize) -> &Self::Output {
+        assert!(index < self.len());
+        let mut i = self.l + index;
+        if i >= N {
+            i -= N;
+        }
+        unsafe { self.buffer[i].assume_init_ref() }
+    }
+}
+
+impl<T, const N: usize> core::ops::IndexMut<usize> for ArrayRingBuffer<T, N> {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        assert!(index < self.len());
+        let mut i = self.l + index;
+        if i >= N {
+            i -= N;
+        }
+        unsafe { self.buffer[i].assume_init_mut() }
+    }
 }

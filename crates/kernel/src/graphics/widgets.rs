@@ -4,7 +4,6 @@ use super::{
 };
 
 pub mod console;
-pub mod text;
 
 pub struct Widget<D: Draw> {
     layer: SharedWindow,

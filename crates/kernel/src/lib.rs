@@ -5,6 +5,7 @@
 #![feature(maybe_uninit_uninit_array)]
 #![feature(int_roundings)]
 #![feature(generic_const_exprs)]
+#![feature(once_cell)]
 
 #[macro_use]
 extern crate lazy_static;

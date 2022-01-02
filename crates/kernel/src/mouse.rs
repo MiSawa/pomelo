@@ -24,7 +24,7 @@ pub fn initialize(layer_manager: &mut LayerManager) {
 }
 
 pub extern "C" fn observe_cursor_move(x: i8, y: i8) {
-    log::info!("Mouse event!");
+    log::trace!("Mouse event!");
     let mut cursor = MOUSE_CURSOR.lock();
     if let Some(cursor) = cursor.as_mut() {
         cursor.move_relative(Vector2d::new(x as ICoordinate, y as ICoordinate));

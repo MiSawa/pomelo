@@ -70,12 +70,17 @@ pub enum MaybeRegistered<D: Draw> {
 }
 
 impl<D: Draw> MaybeRegistered<D> {
-    pub fn register_once(&mut self, layer_manager: &mut LayerManager) {
+    pub fn register_once(&mut self, layer_manager: &mut LayerManager) -> &mut Widget<D> {
         let took = core::mem::replace(self, Self::Registering);
         *self = match took {
             MaybeRegistered::Unregistered(d) => Self::Registered(layer_manager.add(d)),
             other => other,
         };
+        if let MaybeRegistered::Registered(w) = self {
+            w
+        } else {
+            panic!("Whaaat, maybe it failed to register itself?")
+        }
     }
     pub fn unwrap_mut(&mut self) -> &mut D {
         match self {
@@ -84,10 +89,16 @@ impl<D: Draw> MaybeRegistered<D> {
             _ => panic!("Whaaat, maybe it failed to register itself?"),
         }
     }
-    pub fn refresh(&mut self) {
+    pub fn buffer(&mut self) {
         if let MaybeRegistered::Registered(w) = self {
             w.buffer();
-            crate::events::fire_redraw();
+        }
+    }
+    pub fn get_widget(&mut self) -> Option<&mut Widget<D>> {
+        if let MaybeRegistered::Registered(w) = self {
+            Some(w)
+        } else {
+            None
         }
     }
 }
