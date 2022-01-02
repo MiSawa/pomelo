@@ -19,6 +19,12 @@ pub trait Canvas {
     fn bounding_box(&self) -> Rectangle {
         Rectangle::new(Point::zero(), self.size())
     }
+    fn restricted(&mut self, area: Rectangle) -> RestrictedCanvas<'_, Self>
+    where
+        Self: Sized,
+    {
+        RestrictedCanvas { outer: self, area }
+    }
 
     fn draw_pixel_unchecked(&mut self, color: Color, p: Point);
 
@@ -97,5 +103,29 @@ pub trait Canvas {
         };
         core::fmt::write(&mut w, args)?;
         Ok(w.dx)
+    }
+}
+
+pub struct RestrictedCanvas<'a, C: Canvas> {
+    outer: &'a mut C,
+    area: Rectangle,
+}
+
+impl<'a, C: Canvas> Canvas for RestrictedCanvas<'a, C> {
+    fn size(&self) -> Size {
+        self.area.size
+    }
+
+    fn draw_pixel_unchecked(&mut self, color: Color, p: Point) {
+        let q = p + self.area.top_left.into();
+        crate::println!("({}, {})", q.x, q.y);
+        self.outer
+            .draw_pixel_unchecked(color, p + self.area.top_left.into());
+    }
+
+    fn fill_rectangle(&mut self, color: Color, rectangle: &Rectangle) {
+        let actual = self.bounding_box().intersection(rectangle);
+        self.outer
+            .fill_rectangle(color, &(actual + self.area.top_left.into()))
     }
 }

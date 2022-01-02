@@ -1,5 +1,7 @@
 extern crate alloc;
 
+use core::sync::atomic::{AtomicUsize, Ordering};
+
 use alloc::{sync::Arc, vec, vec::Vec};
 use pomelo_common::graphics::{GraphicConfig, PixelFormat};
 use spinning_top::Spinlock;
@@ -19,20 +21,46 @@ pub fn create_layer_manager(graphic_config: &GraphicConfig) -> LayerManager {
     )
 }
 
-type WindowBuffer = BufferCanvas<Vec<u8>>;
-pub(crate) type SharedWindow = Arc<Spinlock<Window>>;
+#[derive(Clone)]
+pub struct SharedWindow {
+    id: WindowID,
+    inner: Arc<Spinlock<Window>>,
+}
+impl SharedWindow {
+    fn new(window: Window) -> Self {
+        Self {
+            id: window.id,
+            inner: Arc::new(Spinlock::new(window)),
+        }
+    }
+    pub fn lock(&self) -> spinning_top::SpinlockGuard<'_, Window> {
+        self.inner.lock()
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct WindowID(usize);
+impl WindowID {
+    pub fn generate() -> Self {
+        static WINDOW_ID_GENERATOR: AtomicUsize = AtomicUsize::new(0);
+        let id = WINDOW_ID_GENERATOR.fetch_add(1, Ordering::SeqCst);
+        Self(id)
+    }
+}
 
 pub struct Window {
+    id: WindowID,
     position: Vector2d,
-    buffer: WindowBuffer,
+    buffer: BufferCanvas<Vec<u8>>,
     container_size: Size,
 }
 
 impl Window {
     fn new(pixel_format: PixelFormat, size: Size, container_size: Size) -> Self {
         Self {
+            id: WindowID::generate(),
             position: Vector2d::zero(),
-            buffer: WindowBuffer::vec_backed(pixel_format, size),
+            buffer: BufferCanvas::vec_backed(pixel_format, size),
             container_size,
         }
     }
@@ -106,6 +134,7 @@ impl<D: Draw> MaybeRegistered<D> {
 pub struct LayerManager {
     pixel_format: PixelFormat,
     layers: Vec<SharedWindow>,
+    top_layers: Vec<SharedWindow>,
     size: Size,
 }
 
@@ -114,14 +143,23 @@ impl LayerManager {
         Self {
             pixel_format,
             layers: vec![],
+            top_layers: vec![],
             size,
         }
+    }
+
+    pub fn add_top<D: Draw>(&mut self, draw: D) -> Widget<D> {
+        let mut window = Window::new(self.pixel_format, draw.size(), self.size);
+        draw.draw(&mut window.buffer);
+        let shared = SharedWindow::new(window);
+        self.top_layers.push(shared.clone());
+        Widget::new(shared, draw)
     }
 
     pub fn add<D: Draw>(&mut self, draw: D) -> Widget<D> {
         let mut window = Window::new(self.pixel_format, draw.size(), self.size);
         draw.draw(&mut window.buffer);
-        let shared = Arc::new(Spinlock::new(window));
+        let shared = SharedWindow::new(window);
         self.layers.push(shared.clone());
         Widget::new(shared, draw)
     }
@@ -133,7 +171,7 @@ impl Draw for LayerManager {
     }
 
     fn draw<C: Canvas>(&self, canvas: &mut C) {
-        for layer in &self.layers {
+        for layer in self.layers.iter().chain(self.top_layers.iter()) {
             let layer = layer.lock();
             canvas.draw_buffer(layer.position, &layer.buffer);
         }

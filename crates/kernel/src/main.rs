@@ -54,7 +54,7 @@ fn initialize(boot_info: &BootInfo) -> Result<GUI> {
     paging::initialize();
     allocator::initialize(boot_info.memory_mapping());
     gdt::initialize();
-    logger::initialize(log::LevelFilter::Info)?;
+    logger::initialize(log::LevelFilter::Warn)?;
     let mut gui = gui::create_gui(boot_info.graphic_config());
     gui.render();
     interrupts::initialize();

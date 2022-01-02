@@ -16,7 +16,7 @@ const TRANSPARENT_COLOR: Color = Color::new(1, 2, 3);
 pub fn initialize(layer_manager: &mut LayerManager) {
     MOUSE_CURSOR.lock().get_or_insert_with(|| {
         let cursor = MouseCursor;
-        let mut widget = layer_manager.add(cursor);
+        let mut widget = layer_manager.add_top(cursor);
         widget.move_relative(Vector2d::new(200, 200));
         widget.set_transparent_color(Some(TRANSPARENT_COLOR));
         widget

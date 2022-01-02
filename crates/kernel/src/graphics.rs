@@ -41,6 +41,18 @@ impl Vector2d {
     }
 }
 
+impl From<Point> for Vector2d {
+    fn from(p: Point) -> Self {
+        Vector2d::new(p.x, p.y)
+    }
+}
+
+impl From<Vector2d> for Point {
+    fn from(v: Vector2d) -> Self {
+        Point::new(v.x, v.y)
+    }
+}
+
 impl core::ops::Add<Vector2d> for Point {
     type Output = Point;
 
@@ -205,6 +217,14 @@ impl Color {
 
     pub const fn new(r: u8, g: u8, b: u8) -> Self {
         Self { r, g, b }
+    }
+
+    pub const fn gray_scale(v: u8) -> Self {
+        Self::new(v, v, v)
+    }
+
+    pub const fn from_code(v: u32) -> Self {
+        Self::new((v >> 16) as u8, (v >> 8) as u8, v as u8)
     }
 }
 
