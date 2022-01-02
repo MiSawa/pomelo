@@ -40,7 +40,14 @@ pub fn event_loop(mut gui: GUI) -> Result<!> {
             drop(queue);
             log::trace!("Got an event {:?}", event);
             match event {
-                Event::XHCI => xhci::handle_events(),
+                Event::XHCI => {
+                    xhci::handle_events();
+                    // crate::timer::start_lapic_timer();
+                    // gui.render();
+                    // let elapsed = crate::timer::get_elapsed_time();
+                    // crate::timer::stop_lapic_timer();
+                    // log::info!("render took {}", elapsed);
+                }
                 Event::REDRAW(v) => {
                     let update =
                         REDRAW_GENERATION.fetch_update(Ordering::SeqCst, Ordering::Relaxed, |g| {

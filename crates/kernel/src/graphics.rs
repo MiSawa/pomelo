@@ -1,10 +1,10 @@
 use self::canvas::Canvas;
 
 mod buffer;
-pub mod canvas;
-pub mod layer;
-pub mod screen;
-pub mod widgets;
+pub(crate) mod canvas;
+pub(crate) mod layer;
+pub(crate) mod screen;
+pub(crate) mod widgets;
 
 pub type ICoordinate = i32;
 pub type UCoordinate = u32;

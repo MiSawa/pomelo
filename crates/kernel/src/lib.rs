@@ -20,11 +20,13 @@ pub mod gui;
 pub mod interrupts;
 pub mod logger;
 pub(crate) mod memory_manager;
-pub mod mouse;
+pub(crate) mod mouse;
 pub mod msi;
 pub mod paging;
 pub mod pci;
 pub(crate) mod ring_buffer;
+#[allow(unused)]
+pub(crate) mod timer;
 pub mod xhci;
 
 #[macro_export]
