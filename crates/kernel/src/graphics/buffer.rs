@@ -52,6 +52,14 @@ impl<B> BufferCanvas<B> {
         }
     }
 
+    pub fn size(&self) -> Size {
+        self.size
+    }
+
+    pub fn pixel_format(&self) -> PixelFormat {
+        self.pixel_format
+    }
+
     pub fn set_transparent_color(&mut self, transparent_color: Option<Color>) {
         self.transparent_color = transparent_color;
     }

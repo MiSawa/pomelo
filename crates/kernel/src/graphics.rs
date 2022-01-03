@@ -1,6 +1,6 @@
 use self::canvas::Canvas;
 
-mod buffer;
+pub mod buffer;
 pub(crate) mod canvas;
 pub(crate) mod layer;
 pub(crate) mod screen;
@@ -106,7 +106,7 @@ impl Size {
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Default)]
 pub struct Rectangle {
     top_left: Point,
     size: Size,

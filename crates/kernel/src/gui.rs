@@ -2,10 +2,12 @@ use pomelo_common::graphics::GraphicConfig;
 
 use crate::{
     graphics::{
+        buffer::BufferCanvas,
+        canvas::Canvas,
         layer::{self, LayerManager, WindowID},
         screen::{self, Screen},
         widgets::{self, console},
-        Draw, Rectangle, Size, UCoordinate,
+        Draw, Rectangle, Size, UCoordinate, Vector2d,
     },
     mouse,
 };
@@ -27,11 +29,7 @@ pub fn create_gui(graphic_config: &GraphicConfig) -> GUI {
     counter.buffer();
     counter.move_relative(crate::graphics::Vector2d::new(300, 200));
 
-    GUI {
-        layer_manager,
-        screen,
-        counter,
-    }
+    GUI::new(layer_manager, screen, counter)
 }
 pub struct Counter(usize);
 impl Counter {
@@ -60,20 +58,41 @@ impl Draw for Counter {
 pub struct GUI {
     layer_manager: LayerManager,
     screen: Screen,
+    buffer: BufferCanvas<alloc::vec::Vec<u8>>,
     counter: widgets::Widget<widgets::Framed<Counter>>,
 }
 
 impl GUI {
+    pub fn new(
+        layer_manager: LayerManager,
+        screen: Screen,
+        counter: widgets::Widget<widgets::Framed<Counter>>,
+    ) -> Self {
+        let buffer = BufferCanvas::vec_backed(screen.pixel_format(), screen.size());
+        Self {
+            layer_manager,
+            screen,
+            buffer,
+            counter,
+        }
+    }
+
     pub fn render(&mut self) {
-        self.layer_manager.draw(&mut self.screen);
+        self.layer_manager.draw(&mut self.buffer);
+        self.screen.draw_buffer(Vector2d::zero(), &mut self.buffer);
     }
 
     pub fn render_window(&mut self, id: WindowID) {
-        self.layer_manager.draw_window(&mut self.screen, id);
+        if let Some(area) = self.layer_manager.draw_window(&mut self.buffer, id) {
+            self.screen
+                .draw_buffer_area(Vector2d::zero(), &mut self.buffer, area);
+        }
     }
 
     pub fn render_area(&mut self, area: Rectangle) {
-        self.layer_manager.draw_area(&mut self.screen, area);
+        self.layer_manager.draw_area(&mut self.buffer, area);
+        self.screen
+            .draw_buffer_area(Vector2d::zero(), &mut self.buffer, area);
     }
 
     pub fn inc_counter(&mut self) {

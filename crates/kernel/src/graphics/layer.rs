@@ -168,7 +168,7 @@ impl LayerManager {
         Widget::new(shared, draw)
     }
 
-    pub fn draw_window<C: Canvas>(&self, canvas: &mut C, id: WindowID) {
+    pub fn draw_window<C: Canvas>(&self, canvas: &mut C, id: WindowID) -> Option<Rectangle> {
         let mut redraw_area = None;
         for layer in self.layers.iter().chain(self.top_layers.iter()) {
             if layer.id == id {
@@ -181,6 +181,7 @@ impl LayerManager {
                 canvas.draw_buffer_area(layer.position, &layer.buffer, area);
             }
         }
+        redraw_area
     }
 
     pub fn draw_area<C: Canvas>(&self, canvas: &mut C, area: Rectangle) {
