@@ -3,7 +3,13 @@ use lazy_static::lazy_static;
 use spinning_top::Spinlock;
 use x86_64::instructions::interrupts;
 
-use crate::{gui::GUI, prelude::*, ring_buffer::ArrayRingBuffer, xhci};
+use crate::{
+    graphics::{layer::WindowID, Rectangle},
+    gui::GUI,
+    prelude::*,
+    ring_buffer::ArrayRingBuffer,
+    xhci,
+};
 
 lazy_static! {
     static ref GLOAL_QUEUE: Spinlock<ArrayRingBuffer<Event, 1024>> =
@@ -15,7 +21,9 @@ pub static MAIN_LOOP_COUNT: AtomicUsize = AtomicUsize::new(0);
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub enum Event {
     XHCI,
-    REDRAW(usize),
+    Redraw(usize),
+    RedrawWindow(WindowID),
+    RedrawArea(Rectangle),
 }
 
 fn enque(event: Event) {
@@ -29,14 +37,21 @@ pub fn fire_xhci() {
 }
 
 pub fn fire_redraw() {
-    enque(Event::REDRAW(REDRAW_GENERATION.load(Ordering::SeqCst)));
+    enque(Event::Redraw(REDRAW_GENERATION.load(Ordering::SeqCst)));
+}
+
+pub fn fire_redraw_window(id: WindowID) {
+    enque(Event::RedrawWindow(id))
+}
+
+pub fn fire_redraw_area(area: Rectangle) {
+    enque(Event::RedrawArea(area))
 }
 
 pub fn event_loop(mut gui: GUI) -> Result<!> {
     log::info!("start event loop");
     loop {
         gui.inc_counter();
-        fire_redraw();
         interrupts::disable();
         let mut queue = GLOAL_QUEUE.lock();
         if let Some(event) = queue.pop_front() {
@@ -52,7 +67,7 @@ pub fn event_loop(mut gui: GUI) -> Result<!> {
                     // crate::timer::stop_lapic_timer();
                     // log::info!("render took {}", elapsed);
                 }
-                Event::REDRAW(v) => {
+                Event::Redraw(v) => {
                     let update =
                         REDRAW_GENERATION.fetch_update(Ordering::SeqCst, Ordering::Relaxed, |g| {
                             if g > v {
@@ -64,6 +79,12 @@ pub fn event_loop(mut gui: GUI) -> Result<!> {
                     if update.is_ok() {
                         gui.render();
                     }
+                }
+                Event::RedrawWindow(id) => {
+                    gui.render_window(id);
+                }
+                Event::RedrawArea(area) => {
+                    gui.render_area(area);
                 }
             }
         } else {

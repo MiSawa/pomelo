@@ -1,6 +1,7 @@
 use super::{
-    canvas::Canvas, layer::SharedWindow, Color, Draw, ICoordinate, Point, Rectangle, Size,
-    Vector2d, DESKTOP_BG_COLOR,
+    canvas::Canvas,
+    layer::{SharedWindow, WindowID},
+    Color, Draw, ICoordinate, Point, Rectangle, Size, Vector2d, DESKTOP_BG_COLOR,
 };
 
 pub mod console;
@@ -13,6 +14,10 @@ pub struct Widget<D: Draw> {
 impl<D: Draw> Widget<D> {
     pub fn new(layer: SharedWindow, draw: D) -> Self {
         Self { layer, draw }
+    }
+
+    pub fn window_id(&self) -> WindowID {
+        self.layer.window_id()
     }
 
     pub fn move_relative(&mut self, v: Vector2d) {
@@ -52,24 +57,24 @@ impl Draw for Desktop {
     }
 
     fn draw<C: Canvas>(&self, canvas: &mut C) {
-        canvas.fill_rectangle(DESKTOP_BG_COLOR, &canvas.bounding_box());
+        canvas.fill_rectangle(DESKTOP_BG_COLOR, canvas.bounding_box());
         canvas.fill_rectangle(
             Color::new(1, 8, 17),
-            &Rectangle::new(
+            Rectangle::new(
                 Point::new(0, self.size.y as ICoordinate - 50),
                 Size::new(self.size.x, 50),
             ),
         );
         canvas.fill_rectangle(
             Color::new(80, 80, 80),
-            &Rectangle::new(
+            Rectangle::new(
                 Point::new(0, self.size.y as ICoordinate - 50),
                 Size::new(self.size.x / 5, 50),
             ),
         );
         canvas.fill_rectangle(
             Color::new(160, 160, 160),
-            &Rectangle::new(
+            Rectangle::new(
                 Point::new(10, self.size.y as ICoordinate - 40),
                 Size::new(30, 30),
             ),
@@ -99,52 +104,52 @@ impl<D: Draw> Draw for Framed<D> {
         let size = self.size();
         canvas.fill_rectangle(
             Color::gray_scale(0xC6),
-            &Rectangle::new(Point::new(0, 0), Size::new(size.x, 1)),
+            Rectangle::new(Point::new(0, 0), Size::new(size.x, 1)),
         );
         canvas.fill_rectangle(
             Color::gray_scale(0xFF),
-            &Rectangle::new(Point::new(1, 1), Size::new(size.x - 2, 1)),
+            Rectangle::new(Point::new(1, 1), Size::new(size.x - 2, 1)),
         );
         canvas.fill_rectangle(
             Color::gray_scale(0xC6),
-            &Rectangle::new(Point::new(0, 0), Size::new(1, size.y)),
+            Rectangle::new(Point::new(0, 0), Size::new(1, size.y)),
         );
         canvas.fill_rectangle(
             Color::gray_scale(0xFF),
-            &Rectangle::new(Point::new(1, 1), Size::new(1, size.y - 2)),
+            Rectangle::new(Point::new(1, 1), Size::new(1, size.y - 2)),
         );
         canvas.fill_rectangle(
             Color::gray_scale(0x84),
-            &Rectangle::new(
+            Rectangle::new(
                 Point::new(size.x as ICoordinate - 2, 1),
                 Size::new(1, size.y - 2),
             ),
         );
         canvas.fill_rectangle(
             Color::gray_scale(0x00),
-            &Rectangle::new(
+            Rectangle::new(
                 Point::new(size.x as ICoordinate - 1, 0),
                 Size::new(1, size.y),
             ),
         );
         canvas.fill_rectangle(
             Color::gray_scale(0xC6),
-            &Rectangle::new(Point::new(2, 2), Size::new(size.x - 4, size.y - 4)),
+            Rectangle::new(Point::new(2, 2), Size::new(size.x - 4, size.y - 4)),
         );
         canvas.fill_rectangle(
             Color::new(0, 0, 0x84),
-            &Rectangle::new(Point::new(3, 3), Size::new(size.x - 6, 18)),
+            Rectangle::new(Point::new(3, 3), Size::new(size.x - 6, 18)),
         );
         canvas.fill_rectangle(
             Color::gray_scale(0x84),
-            &Rectangle::new(
+            Rectangle::new(
                 Point::new(1, size.y as ICoordinate - 2),
                 Size::new(size.x - 2, 1),
             ),
         );
         canvas.fill_rectangle(
             Color::gray_scale(0x00),
-            &Rectangle::new(
+            Rectangle::new(
                 Point::new(0, size.y as ICoordinate - 1),
                 Size::new(size.x, 1),
             ),

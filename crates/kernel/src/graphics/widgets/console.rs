@@ -76,7 +76,7 @@ impl Draw for Row {
     }
 
     fn draw<C: Canvas>(&self, canvas: &mut C) {
-        canvas.fill_rectangle(self.background, &self.bounding_box());
+        canvas.fill_rectangle(self.background, self.bounding_box());
         canvas.draw_string(self.foreground, Point::zero(), self.text.as_str());
     }
 }

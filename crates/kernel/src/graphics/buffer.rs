@@ -94,9 +94,11 @@ impl<B: ByteBuffer> BufferCanvas<B> {
         }
     }
 
-    fn draw_to(&self, v: Vector2d, dest: &mut BufferCanvas<impl ByteBuffer>) {
+    fn draw_to(&self, v: Vector2d, dest: &mut BufferCanvas<impl ByteBuffer>, dest_area: Rectangle) {
         assert_eq!(self.pixel_format, dest.pixel_format);
-        let target_rectangle = (self.bounding_box() + v).intersection(&dest.bounding_box());
+        let target_rectangle = (self.bounding_box() + v)
+            .intersection(&dest.bounding_box())
+            .intersection(&dest_area);
         if self.transparent_color.is_some() {
             for p in target_rectangle.points() {
                 if let Some(c) = self.get_color(p - v) {
@@ -142,9 +144,17 @@ impl<B: ByteBuffer> Canvas for BufferCanvas<B> {
         self.buffer.as_mut_slice()[offset + self.b_offset as usize] = color.b;
     }
     fn draw_buffer(&mut self, v: Vector2d, buffer: &BufferCanvas<impl ByteBuffer>) {
-        buffer.draw_to(v, self);
+        buffer.draw_to(v, self, self.bounding_box());
     }
-    fn fill_rectangle(&mut self, color: Color, rectangle: &Rectangle) {
+    fn draw_buffer_area(
+        &mut self,
+        v: Vector2d,
+        buffer: &BufferCanvas<impl ByteBuffer>,
+        dest_area: Rectangle,
+    ) {
+        buffer.draw_to(v, self, dest_area);
+    }
+    fn fill_rectangle(&mut self, color: Color, rectangle: Rectangle) {
         let rectangle = rectangle.intersection(&self.bounding_box());
         let mut pattern = [0; MAX_BYTES_PER_PIXEL];
         pattern[self.r_offset as usize] = color.r;

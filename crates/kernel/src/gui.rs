@@ -2,10 +2,10 @@ use pomelo_common::graphics::GraphicConfig;
 
 use crate::{
     graphics::{
-        layer::{self, LayerManager},
+        layer::{self, LayerManager, WindowID},
         screen::{self, Screen},
         widgets::{self, console},
-        Draw, Size, UCoordinate,
+        Draw, Rectangle, Size, UCoordinate,
     },
     mouse,
 };
@@ -68,8 +68,17 @@ impl GUI {
         self.layer_manager.draw(&mut self.screen);
     }
 
+    pub fn render_window(&mut self, id: WindowID) {
+        self.layer_manager.draw_window(&mut self.screen, id);
+    }
+
+    pub fn render_area(&mut self, area: Rectangle) {
+        self.layer_manager.draw_area(&mut self.screen, area);
+    }
+
     pub fn inc_counter(&mut self) {
         self.counter.draw_mut().draw_mut().inc();
         self.counter.buffer();
+        self.render_window(self.counter.window_id());
     }
 }

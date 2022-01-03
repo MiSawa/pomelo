@@ -106,6 +106,7 @@ impl Size {
     }
 }
 
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct Rectangle {
     top_left: Point,
     size: Size,

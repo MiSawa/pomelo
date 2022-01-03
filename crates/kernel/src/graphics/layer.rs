@@ -7,8 +7,8 @@ use pomelo_common::graphics::{GraphicConfig, PixelFormat};
 use spinning_top::Spinlock;
 
 use super::{
-    buffer::BufferCanvas, canvas::Canvas, widgets::Widget, Color, Draw, ICoordinate, Size,
-    UCoordinate, Vector2d,
+    buffer::BufferCanvas, canvas::Canvas, widgets::Widget, Color, Draw, ICoordinate, Rectangle,
+    Size, UCoordinate, Vector2d,
 };
 
 pub fn create_layer_manager(graphic_config: &GraphicConfig) -> LayerManager {
@@ -35,6 +35,10 @@ impl SharedWindow {
     }
     pub fn lock(&self) -> spinning_top::SpinlockGuard<'_, Window> {
         self.inner.lock()
+    }
+
+    pub fn window_id(&self) -> WindowID {
+        self.id
     }
 }
 
@@ -162,6 +166,28 @@ impl LayerManager {
         let shared = SharedWindow::new(window);
         self.layers.push(shared.clone());
         Widget::new(shared, draw)
+    }
+
+    pub fn draw_window<C: Canvas>(&self, canvas: &mut C, id: WindowID) {
+        let mut redraw_area = None;
+        for layer in self.layers.iter().chain(self.top_layers.iter()) {
+            if layer.id == id {
+                let layer = layer.lock();
+                let area = Rectangle::new(layer.position.into(), layer.buffer.size());
+                canvas.draw_buffer_area(layer.position, &layer.buffer, area);
+                redraw_area = Some(area)
+            } else if let Some(area) = redraw_area {
+                let layer = layer.lock();
+                canvas.draw_buffer_area(layer.position, &layer.buffer, area);
+            }
+        }
+    }
+
+    pub fn draw_area<C: Canvas>(&self, canvas: &mut C, area: Rectangle) {
+        for layer in self.layers.iter().chain(self.top_layers.iter()) {
+            let layer = layer.lock();
+            canvas.draw_buffer_area(layer.position, &layer.buffer, area);
+        }
     }
 }
 

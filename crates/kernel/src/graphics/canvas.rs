@@ -43,8 +43,24 @@ pub trait Canvas {
         }
     }
 
-    fn fill_rectangle(&mut self, color: Color, rectangle: &Rectangle) {
-        let actual = self.bounding_box().intersection(rectangle);
+    fn draw_buffer_area(
+        &mut self,
+        v: Vector2d,
+        buffer: &BufferCanvas<impl ByteBuffer>,
+        dest_area: Rectangle,
+    ) {
+        let rectangle = (buffer.bounding_box() + v)
+            .intersection(&self.bounding_box())
+            .intersection(&dest_area);
+        for p in rectangle.points() {
+            if let Some(c) = buffer.get_color(p - v) {
+                self.draw_pixel_unchecked(c, p);
+            }
+        }
+    }
+
+    fn fill_rectangle(&mut self, color: Color, rectangle: Rectangle) {
+        let actual = self.bounding_box().intersection(&rectangle);
         for p in actual.points() {
             self.draw_pixel_unchecked(color, p)
         }
@@ -117,14 +133,13 @@ impl<'a, C: Canvas> Canvas for RestrictedCanvas<'a, C> {
     }
 
     fn draw_pixel_unchecked(&mut self, color: Color, p: Point) {
-        let q = p + self.area.top_left.into();
         self.outer
             .draw_pixel_unchecked(color, p + self.area.top_left.into());
     }
 
-    fn fill_rectangle(&mut self, color: Color, rectangle: &Rectangle) {
-        let actual = self.bounding_box().intersection(rectangle);
+    fn fill_rectangle(&mut self, color: Color, rectangle: Rectangle) {
+        let actual = self.bounding_box().intersection(&rectangle);
         self.outer
-            .fill_rectangle(color, &(actual + self.area.top_left.into()))
+            .fill_rectangle(color, actual + self.area.top_left.into())
     }
 }
