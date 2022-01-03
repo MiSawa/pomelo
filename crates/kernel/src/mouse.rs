@@ -1,3 +1,4 @@
+use bitflags::bitflags;
 use spinning_top::Spinlock;
 
 use crate::{
@@ -6,7 +7,7 @@ use crate::{
 };
 
 lazy_static! {
-    static ref MOUSE_CURSOR: Spinlock<Option<Widget<MouseCursor>>> = Spinlock::new(Option::None);
+    static ref MOUSE_CURSOR: Spinlock<Option<MouseCursor>> = Spinlock::new(Option::None);
 }
 
 const HEIGHT: usize = 24;
@@ -15,25 +16,52 @@ const TRANSPARENT_COLOR: Color = Color::new(1, 2, 3);
 
 pub fn initialize(layer_manager: &mut LayerManager) {
     MOUSE_CURSOR.lock().get_or_insert_with(|| {
-        let cursor = MouseCursor;
+        let cursor = MouseCursorImage;
         let mut widget = layer_manager.add_top(cursor);
         widget.move_relative(Vector2d::new(200, 200));
         widget.set_transparent_color(Some(TRANSPARENT_COLOR));
-        widget
+        MouseCursor {
+            widget,
+            buttons: MouseButtons::empty(),
+        }
     });
 }
 
-pub extern "C" fn observe_cursor_move(x: i8, y: i8) {
+pub extern "C" fn observe_cursor_move(button_state: u8, x: i8, y: i8) {
     log::trace!("Mouse event!");
     let mut cursor = MOUSE_CURSOR.lock();
     if let Some(cursor) = cursor.as_mut() {
-        cursor.move_relative(Vector2d::new(x as ICoordinate, y as ICoordinate));
+        let buttons = MouseButtons::from_bits_truncate(button_state);
+        cursor.handle_event(buttons, Vector2d::new(x as ICoordinate, y as ICoordinate));
     }
 }
 
-struct MouseCursor;
+bitflags! {
+    struct MouseButtons: u8 {
+        const LEFT   = 0b001;
+        const RIGHT  = 0b010;
+        const MIDDLE = 0b100;
+    }
+}
 
-impl Draw for MouseCursor {
+struct MouseCursor {
+    widget: Widget<MouseCursorImage>,
+    buttons: MouseButtons,
+}
+
+impl MouseCursor {
+    fn handle_event(&mut self, buttons: MouseButtons, v: Vector2d) {
+        let (start, end) = self.widget.move_relative(v);
+        if self.buttons.contains(MouseButtons::LEFT) && buttons.contains(MouseButtons::LEFT) {
+            crate::events::fire_drag(start, end);
+        }
+        self.buttons = buttons;
+    }
+}
+
+struct MouseCursorImage;
+
+impl Draw for MouseCursorImage {
     fn size(&self) -> Size {
         Size::new(WIDTH as UCoordinate, HEIGHT as UCoordinate)
     }

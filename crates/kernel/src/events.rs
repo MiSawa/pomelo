@@ -1,4 +1,4 @@
-use core::sync::atomic::{AtomicUsize, Ordering};
+use alloc::collections::VecDeque;
 use lazy_static::lazy_static;
 use spinning_top::Spinlock;
 use x86_64::instructions::interrupts;
@@ -7,45 +7,76 @@ use crate::{
     graphics::{layer::WindowID, Rectangle},
     gui::GUI,
     prelude::*,
-    ring_buffer::ArrayRingBuffer,
     xhci,
 };
 
 lazy_static! {
-    static ref GLOAL_QUEUE: Spinlock<ArrayRingBuffer<Event, 1024>> =
-        Spinlock::new(Default::default());
+    static ref GLOAL_QUEUE: Spinlock<EventQueue> = Spinlock::new(Default::default());
 }
-static REDRAW_GENERATION: AtomicUsize = AtomicUsize::new(0);
-pub static MAIN_LOOP_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub enum Event {
     XHCI,
-    Redraw(usize),
+    Drag { start: Point, end: Point },
+    Redraw,
     RedrawWindow(WindowID),
     RedrawArea(Rectangle),
 }
 
-fn enque(event: Event) {
+#[derive(Default)]
+struct EventQueue {
+    mouse_events: VecDeque<Event>,
+    xhci_events: VecDeque<Event>,
+    redraw_events: VecDeque<Event>,
+}
+
+fn with_queue_locked<T, F: FnOnce(spinning_top::SpinlockGuard<EventQueue>) -> T>(f: F) -> T {
     interrupts::without_interrupts(|| {
-        GLOAL_QUEUE.lock().try_push_back(event).ok();
+        let locked = GLOAL_QUEUE.lock();
+        f(locked)
     })
 }
 
 pub fn fire_xhci() {
-    enque(Event::XHCI);
+    with_queue_locked(|mut q| q.xhci_events.push_back(Event::XHCI));
+}
+
+pub fn fire_drag(start: Point, end: Point) {
+    with_queue_locked(|mut q| q.mouse_events.push_back(Event::Drag { start, end }));
 }
 
 pub fn fire_redraw() {
-    enque(Event::Redraw(REDRAW_GENERATION.load(Ordering::SeqCst)));
+    with_queue_locked(|mut q| {
+        q.redraw_events.clear();
+        q.redraw_events.push_back(Event::Redraw);
+    });
 }
 
 pub fn fire_redraw_window(id: WindowID) {
-    enque(Event::RedrawWindow(id))
+    with_queue_locked(|mut q| {
+        q.redraw_events.push_back(Event::RedrawWindow(id));
+    });
 }
 
 pub fn fire_redraw_area(area: Rectangle) {
-    enque(Event::RedrawArea(area))
+    with_queue_locked(|mut q| {
+        q.redraw_events.push_back(Event::RedrawArea(area));
+    });
+}
+
+fn deque() -> Option<Event> {
+    with_queue_locked(|mut q| {
+        if let Some(ret) = q.mouse_events.pop_front() {
+            return Some(ret);
+        }
+        if let Some(ret) = q.xhci_events.pop_front() {
+            return Some(ret);
+        }
+        if let Some(ret) = q.redraw_events.pop_front() {
+            return Some(ret);
+        }
+        None
+    })
 }
 
 pub fn event_loop(mut gui: GUI) -> Result<!> {
@@ -53,9 +84,7 @@ pub fn event_loop(mut gui: GUI) -> Result<!> {
     loop {
         gui.inc_counter();
         interrupts::disable();
-        let mut queue = GLOAL_QUEUE.lock();
-        if let Some(event) = queue.pop_front() {
-            drop(queue);
+        if let Some(event) = deque() {
             interrupts::enable();
             log::trace!("Got an event {:?}", event);
             match event {
@@ -67,18 +96,12 @@ pub fn event_loop(mut gui: GUI) -> Result<!> {
                     // crate::timer::stop_lapic_timer();
                     // log::info!("render took {}", elapsed);
                 }
-                Event::Redraw(v) => {
-                    let update =
-                        REDRAW_GENERATION.fetch_update(Ordering::SeqCst, Ordering::Relaxed, |g| {
-                            if g > v {
-                                None
-                            } else {
-                                Some(g + 1)
-                            }
-                        });
-                    if update.is_ok() {
-                        gui.render();
-                    }
+                Event::Drag { start, end } => {
+                    gui.drag(start, end);
+                    fire_redraw();
+                }
+                Event::Redraw => {
+                    gui.render();
                 }
                 Event::RedrawWindow(id) => {
                     gui.render_window(id);
@@ -88,7 +111,6 @@ pub fn event_loop(mut gui: GUI) -> Result<!> {
                 }
             }
         } else {
-            drop(queue);
             interrupts::enable();
             // interrupts::enable_and_hlt();
         }

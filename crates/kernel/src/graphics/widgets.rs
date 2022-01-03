@@ -20,9 +20,9 @@ impl<D: Draw> Widget<D> {
         self.layer.window_id()
     }
 
-    pub fn move_relative(&mut self, v: Vector2d) {
+    pub fn move_relative(&mut self, v: Vector2d) -> (Point, Point) {
         let mut locked = self.layer.lock();
-        locked.move_relative(v);
+        locked.move_relative(v)
     }
 
     pub fn set_transparent_color(&mut self, transparent_color: Option<Color>) {

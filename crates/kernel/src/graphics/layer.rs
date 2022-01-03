@@ -7,8 +7,8 @@ use pomelo_common::graphics::{GraphicConfig, PixelFormat};
 use spinning_top::Spinlock;
 
 use super::{
-    buffer::BufferCanvas, canvas::Canvas, widgets::Widget, Color, Draw, ICoordinate, Rectangle,
-    Size, UCoordinate, Vector2d,
+    buffer::BufferCanvas, canvas::Canvas, widgets::Widget, Color, Draw, ICoordinate, Point,
+    Rectangle, Size, UCoordinate, Vector2d,
 };
 
 pub fn create_layer_manager(graphic_config: &GraphicConfig) -> LayerManager {
@@ -54,7 +54,7 @@ impl WindowID {
 
 pub struct Window {
     id: WindowID,
-    position: Vector2d,
+    position: Point,
     buffer: BufferCanvas<Vec<u8>>,
     container_size: Size,
 }
@@ -63,13 +63,18 @@ impl Window {
     fn new(pixel_format: PixelFormat, size: Size, container_size: Size) -> Self {
         Self {
             id: WindowID::generate(),
-            position: Vector2d::zero(),
+            position: Point::zero(),
             buffer: BufferCanvas::vec_backed(pixel_format, size),
             container_size,
         }
     }
 
-    pub fn move_relative(&mut self, v: Vector2d) {
+    pub fn window_rectangle(&self) -> Rectangle {
+        Rectangle::new(self.position, self.buffer.size())
+    }
+
+    pub fn move_relative(&mut self, v: Vector2d) -> (Point, Point) {
+        let old_position = self.position;
         self.position += v;
         self.position.x = self
             .position
@@ -79,6 +84,7 @@ impl Window {
             .position
             .y
             .clamp(0, self.container_size.y as ICoordinate);
+        (old_position, self.position)
     }
 
     pub fn set_transparent_color(&mut self, transparent_color: Option<Color>) {
@@ -173,12 +179,12 @@ impl LayerManager {
         for layer in self.layers.iter().chain(self.top_layers.iter()) {
             if layer.id == id {
                 let layer = layer.lock();
-                let area = Rectangle::new(layer.position.into(), layer.buffer.size());
-                canvas.draw_buffer_area(layer.position, &layer.buffer, area);
+                let area = layer.window_rectangle();
+                canvas.draw_buffer_area(layer.position.into(), &layer.buffer, area);
                 redraw_area = Some(area)
             } else if let Some(area) = redraw_area {
                 let layer = layer.lock();
-                canvas.draw_buffer_area(layer.position, &layer.buffer, area);
+                canvas.draw_buffer_area(layer.position.into(), &layer.buffer, area);
             }
         }
         redraw_area
@@ -187,7 +193,18 @@ impl LayerManager {
     pub fn draw_area<C: Canvas>(&self, canvas: &mut C, area: Rectangle) {
         for layer in self.layers.iter().chain(self.top_layers.iter()) {
             let layer = layer.lock();
-            canvas.draw_buffer_area(layer.position, &layer.buffer, area);
+            canvas.draw_buffer_area(layer.position.into(), &layer.buffer, area);
+        }
+    }
+
+    pub fn drag(&self, start: Point, end: Point) {
+        // TODO: How to exclude mouse cursor elegantly?
+        for layer in self.layers.iter().rev() {
+            let mut layer = layer.lock();
+            if layer.window_rectangle().contains(&start) {
+                layer.move_relative(end - start);
+                break;
+            }
         }
     }
 }
@@ -200,7 +217,7 @@ impl Draw for LayerManager {
     fn draw<C: Canvas>(&self, canvas: &mut C) {
         for layer in self.layers.iter().chain(self.top_layers.iter()) {
             let layer = layer.lock();
-            canvas.draw_buffer(layer.position, &layer.buffer);
+            canvas.draw_buffer(layer.position.into(), &layer.buffer);
         }
     }
 }

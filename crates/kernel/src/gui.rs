@@ -7,7 +7,7 @@ use crate::{
         layer::{self, LayerManager, WindowID},
         screen::{self, Screen},
         widgets::{self, console},
-        Draw, Rectangle, Size, UCoordinate, Vector2d,
+        Draw, Point, Rectangle, Size, UCoordinate, Vector2d,
     },
     mouse,
 };
@@ -48,7 +48,7 @@ impl Draw for Counter {
         )
     }
     fn draw<C: crate::graphics::canvas::Canvas>(&self, canvas: &mut C) {
-        use super::graphics::{Color, Point};
+        use super::graphics::Color;
         canvas
             .draw_fmt(Color::BLACK, Point::zero(), format_args!("{:010}", self.0))
             .ok();
@@ -99,5 +99,9 @@ impl GUI {
         self.counter.draw_mut().draw_mut().inc();
         self.counter.buffer();
         self.render_window(self.counter.window_id());
+    }
+
+    pub fn drag(&self, start: Point, end: Point) {
+        self.layer_manager.drag(start, end);
     }
 }

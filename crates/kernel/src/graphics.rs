@@ -69,6 +69,22 @@ impl core::ops::Sub<Vector2d> for Point {
     }
 }
 
+impl core::ops::Sub<Vector2d> for Vector2d {
+    type Output = Vector2d;
+
+    fn sub(self, rhs: Vector2d) -> Self::Output {
+        Self::Output::new(self.x - rhs.x, self.y - rhs.y)
+    }
+}
+
+impl core::ops::Sub<Point> for Point {
+    type Output = Vector2d;
+
+    fn sub(self, rhs: Point) -> Self::Output {
+        Self::Output::new(self.x - rhs.x, self.y - rhs.y)
+    }
+}
+
 impl core::ops::AddAssign<Vector2d> for Point {
     fn add_assign(&mut self, rhs: Vector2d) {
         self.x += rhs.x;
