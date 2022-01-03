@@ -27,7 +27,7 @@ pub mod paging;
 pub mod pci;
 pub(crate) mod ring_buffer;
 #[allow(unused)]
-pub(crate) mod timer;
+pub mod timer;
 pub mod xhci;
 
 #[macro_export]

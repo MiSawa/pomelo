@@ -17,6 +17,7 @@ lazy_static! {
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub enum Event {
     XHCI,
+    LAPICTimer,
     Drag { start: Point, end: Point },
     Redraw,
     RedrawWindow(WindowID),
@@ -25,6 +26,7 @@ pub enum Event {
 
 #[derive(Default)]
 struct EventQueue {
+    timer_events: VecDeque<Event>,
     mouse_events: VecDeque<Event>,
     xhci_events: VecDeque<Event>,
     redraw_events: VecDeque<Event>,
@@ -39,6 +41,10 @@ fn with_queue_locked<T, F: FnOnce(spinning_top::SpinlockGuard<EventQueue>) -> T>
 
 pub fn fire_xhci() {
     with_queue_locked(|mut q| q.xhci_events.push_back(Event::XHCI));
+}
+
+pub fn fire_lapic_timer() {
+    with_queue_locked(|mut q| q.timer_events.push_back(Event::LAPICTimer));
 }
 
 pub fn fire_drag(start: Point, end: Point) {
@@ -88,6 +94,9 @@ pub fn event_loop(mut gui: GUI) -> Result<!> {
             interrupts::enable();
             log::trace!("Got an event {:?}", event);
             match event {
+                Event::LAPICTimer => {
+                    crate::println!("Timer event");
+                }
                 Event::XHCI => {
                     xhci::handle_events();
                     // crate::timer::start_lapic_timer();

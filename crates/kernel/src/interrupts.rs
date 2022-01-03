@@ -18,6 +18,7 @@ lazy_static! {
                 .set_stack_index(gdt::DOUBLE_FAULT_IST_INDEX);
         }
         idt[InterruptIndex::XHCI as usize].set_handler_fn(interrupt_handler_xhci);
+        idt[InterruptIndex::LAPICTimer as usize].set_handler_fn(interrupt_handler_lapic_timer);
         idt
     };
 }
@@ -29,6 +30,7 @@ pub fn initialize() {
 #[repr(u8)]
 pub enum InterruptIndex {
     XHCI = 0x40,
+    LAPICTimer = 0x41,
 }
 
 fn end_of_interrupt() {
@@ -38,7 +40,14 @@ fn end_of_interrupt() {
 }
 
 extern "x86-interrupt" fn interrupt_handler_xhci(_stack_frame: InterruptStackFrame) {
+    log::trace!("Handling XHCI interruption");
     crate::events::fire_xhci();
+    end_of_interrupt()
+}
+
+extern "x86-interrupt" fn interrupt_handler_lapic_timer(_stack_frame: InterruptStackFrame) {
+    log::trace!("Handling LAPIC timer interruption");
+    crate::events::fire_lapic_timer();
     end_of_interrupt()
 }
 
