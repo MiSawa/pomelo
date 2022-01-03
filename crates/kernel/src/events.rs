@@ -72,6 +72,9 @@ pub fn fire_redraw_area(area: Rectangle) {
 
 fn deque() -> Option<Event> {
     with_queue_locked(|mut q| {
+        if let Some(ret) = q.timer_events.pop_front() {
+            return Some(ret);
+        }
         if let Some(ret) = q.mouse_events.pop_front() {
             return Some(ret);
         }
@@ -88,22 +91,16 @@ fn deque() -> Option<Event> {
 pub fn event_loop(mut gui: GUI) -> Result<!> {
     log::info!("start event loop");
     loop {
-        gui.inc_counter();
         interrupts::disable();
         if let Some(event) = deque() {
             interrupts::enable();
             log::trace!("Got an event {:?}", event);
             match event {
                 Event::LAPICTimer => {
-                    crate::println!("Timer event");
+                    gui.tick();
                 }
                 Event::XHCI => {
                     xhci::handle_events();
-                    // crate::timer::start_lapic_timer();
-                    // gui.render();
-                    // let elapsed = crate::timer::get_elapsed_time();
-                    // crate::timer::stop_lapic_timer();
-                    // log::info!("render took {}", elapsed);
                 }
                 Event::Drag { start, end } => {
                     gui.drag(start, end);
@@ -120,8 +117,7 @@ pub fn event_loop(mut gui: GUI) -> Result<!> {
                 }
             }
         } else {
-            interrupts::enable();
-            // interrupts::enable_and_hlt();
+            interrupts::enable_and_hlt();
         }
     }
 }
