@@ -118,7 +118,6 @@ impl<'a, C: Canvas> Canvas for RestrictedCanvas<'a, C> {
 
     fn draw_pixel_unchecked(&mut self, color: Color, p: Point) {
         let q = p + self.area.top_left.into();
-        crate::println!("({}, {})", q.x, q.y);
         self.outer
             .draw_pixel_unchecked(color, p + self.area.top_left.into());
     }

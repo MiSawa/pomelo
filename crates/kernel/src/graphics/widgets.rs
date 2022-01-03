@@ -85,6 +85,9 @@ impl<D: Draw> Framed<D> {
     pub fn new(title: alloc::string::String, draw: D) -> Self {
         Self { title, draw }
     }
+    pub fn draw_mut(&mut self) -> &mut D {
+        &mut self.draw
+    }
 }
 impl<D: Draw> Draw for Framed<D> {
     fn size(&self) -> Size {

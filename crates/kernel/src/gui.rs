@@ -21,37 +21,55 @@ pub fn create_gui(graphic_config: &GraphicConfig) -> GUI {
     console::register(&mut layer_manager);
     mouse::initialize(&mut layer_manager);
 
-    struct Message;
-    impl Draw for Message {
-        fn size(&self) -> Size {
-            Size::new(300, 100)
-        }
-        fn draw<C: crate::graphics::canvas::Canvas>(&self, canvas: &mut C) {
-            use super::graphics::{Color, Point};
-            canvas.draw_string(Color::BLACK, Point::zero(), "Welcome to");
-            canvas.draw_string(Color::BLACK, Point::new(0, 20), " PomeloOS world!");
-        }
-    }
     use alloc::string::ToString;
-    let framed_message =
-        crate::graphics::widgets::Framed::new("Hello PomeloOS".to_string(), Message);
-    let mut w = layer_manager.add(framed_message);
-    w.buffer();
-    w.move_relative(crate::graphics::Vector2d::new(300, 200));
+    let counter = crate::graphics::widgets::Framed::new("Counter".to_string(), Counter::new());
+    let mut counter = layer_manager.add(counter);
+    counter.buffer();
+    counter.move_relative(crate::graphics::Vector2d::new(300, 200));
 
     GUI {
         layer_manager,
         screen,
+        counter,
+    }
+}
+pub struct Counter(usize);
+impl Counter {
+    fn new() -> Self {
+        Self(0)
+    }
+    fn inc(&mut self) {
+        self.0 += 1;
+    }
+}
+impl Draw for Counter {
+    fn size(&self) -> Size {
+        Size::new(
+            crate::graphics::canvas::GLYPH_WIDTH * 20,
+            crate::graphics::canvas::GLYPH_HEIGHT,
+        )
+    }
+    fn draw<C: crate::graphics::canvas::Canvas>(&self, canvas: &mut C) {
+        use super::graphics::{Color, Point};
+        canvas
+            .draw_fmt(Color::BLACK, Point::zero(), format_args!("{:010}", self.0))
+            .ok();
     }
 }
 
 pub struct GUI {
     layer_manager: LayerManager,
     screen: Screen,
+    counter: widgets::Widget<widgets::Framed<Counter>>,
 }
 
 impl GUI {
     pub fn render(&mut self) {
         self.layer_manager.draw(&mut self.screen);
+    }
+
+    pub fn inc_counter(&mut self) {
+        self.counter.draw_mut().draw_mut().inc();
+        self.counter.buffer();
     }
 }

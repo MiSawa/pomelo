@@ -10,6 +10,7 @@ lazy_static! {
         Spinlock::new(Default::default());
 }
 static REDRAW_GENERATION: AtomicUsize = AtomicUsize::new(0);
+pub static MAIN_LOOP_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub enum Event {
@@ -34,19 +35,22 @@ pub fn fire_redraw() {
 pub fn event_loop(mut gui: GUI) -> Result<!> {
     log::info!("start event loop");
     loop {
+        gui.inc_counter();
+        fire_redraw();
         interrupts::disable();
         let mut queue = GLOAL_QUEUE.lock();
         if let Some(event) = queue.pop_front() {
             drop(queue);
+            interrupts::enable();
             log::trace!("Got an event {:?}", event);
             match event {
                 Event::XHCI => {
                     xhci::handle_events();
-                    crate::timer::start_lapic_timer();
-                    gui.render();
-                    let elapsed = crate::timer::get_elapsed_time();
-                    crate::timer::stop_lapic_timer();
-                    log::info!("render took {}", elapsed);
+                    // crate::timer::start_lapic_timer();
+                    // gui.render();
+                    // let elapsed = crate::timer::get_elapsed_time();
+                    // crate::timer::stop_lapic_timer();
+                    // log::info!("render took {}", elapsed);
                 }
                 Event::REDRAW(v) => {
                     let update =
@@ -64,7 +68,8 @@ pub fn event_loop(mut gui: GUI) -> Result<!> {
             }
         } else {
             drop(queue);
-            interrupts::enable_and_hlt();
+            interrupts::enable();
+            // interrupts::enable_and_hlt();
         }
     }
 }
