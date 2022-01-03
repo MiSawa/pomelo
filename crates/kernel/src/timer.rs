@@ -1,25 +1,117 @@
-use core::{cmp::Reverse, sync::atomic::AtomicU64};
+use core::cmp::Reverse;
 
 use alloc::{boxed::Box, collections::binary_heap::BinaryHeap};
 
-use crate::interrupts::InterruptIndex;
+use crate::{interrupts::InterruptIndex, prelude::*};
 
-const MAX_TIMER_COUNT: u32 = 10000000;
+/// The target value of LAPIC timer frequency
+const TARGET_FREQUENCY: u32 = 100; // once per 10 ms
+/// How much duration we will use to adjust the LAPIC timer frequency
+const INITIALIZATION_MILLIS: u32 = 1000;
+const MAX_TIMER_COUNT: u32 = u32::MAX;
+const DEFAULT_TIMER_COUNT: u32 = 10000000;
+const PM_TIMER_FREQUENCY: u32 = 3579545;
 
 const LVT_TIMER_ADDRESS: *mut u32 = 0xFEE00320 as *mut u32;
 const DIVIDE_CONFIGURATION_ADDRESS: *mut u32 = 0xFEE003E0 as *mut u32;
 const INITIAL_COUNT_ADDRESS: *mut u32 = 0xFEE00380 as *mut u32;
-// const CURRENT_COUNT_ADDRESS: *const u32 = 0xFEE00390 as *const u32;
+const CURRENT_COUNT_ADDRESS: *const u32 = 0xFEE00390 as *const u32;
 
-fn initialize() {
-    const DIVIDE_1_1: u32 = 0b1011;
-    const PERIODIC_INTERRUPT: u32 = 0b10 << 16;
-    const VECTOR: u32 = InterruptIndex::LAPICTimer as u32;
+const DIVIDE_1_1: u32 = 0b1011;
+const ONESHOT: u32 = 0b01 << 16;
+const PERIODIC_INTERRUPT: u32 = 0b10 << 16;
+const VECTOR: u32 = InterruptIndex::LAPICTimer as u32;
 
+fn get_lapic_frequency(acpi2_rsdp: Option<*const core::ffi::c_void>) -> Result<u64> {
+    let rsdp = acpi2_rsdp.ok_or(Error::Whatever("No ACPI RSDP"))?;
+    #[derive(Copy, Clone)]
+    struct Handler;
+    impl acpi::AcpiHandler for Handler {
+        unsafe fn map_physical_region<T>(
+            &self,
+            physical_address: usize,
+            size: usize,
+        ) -> acpi::PhysicalMapping<Self, T> {
+            let virtual_start = core::ptr::NonNull::new(physical_address as *mut T).unwrap();
+            acpi::PhysicalMapping::new(
+                physical_address,
+                virtual_start,
+                physical_address,
+                size,
+                Handler,
+            )
+        }
+
+        fn unmap_physical_region<T>(region: &acpi::PhysicalMapping<Self, T>) {}
+    }
+    let table = unsafe { acpi::AcpiTables::from_rsdp(Handler, rsdp.to_bits())? };
+    let timer = table
+        .platform_info()?
+        .pm_timer
+        .ok_or(Error::Whatever("No pm timer available"))?;
+
+    let address = timer
+        .base
+        .address
+        .try_into()
+        .map_err(|_| Error::Whatever("The address of pm timer isn't 16 bit."))?;
+    let mut pm_timer = x86_64::instructions::port::PortReadOnly::<u32>::new(address);
+    const MASK: u32 = 0x00FFFFFF;
+    // Use as a 24bit timer
+    let mut read_time = || unsafe { pm_timer.read() & MASK };
+    // Check if this actually looks like a timer
+    {
+        let a = read_time();
+        let b = read_time();
+        if a == b {
+            return Err(Error::Whatever(
+                "Read pm timer twice, but got the same value",
+            ));
+        }
+    }
+
+    let count_lapic = |f: &mut dyn FnMut()| {
+        unsafe {
+            core::ptr::write_volatile(DIVIDE_CONFIGURATION_ADDRESS, DIVIDE_1_1);
+            core::ptr::write_volatile(LVT_TIMER_ADDRESS, ONESHOT);
+            core::ptr::write_volatile(INITIAL_COUNT_ADDRESS, MAX_TIMER_COUNT);
+        }
+        f();
+        let end = unsafe { core::ptr::read_volatile(CURRENT_COUNT_ADDRESS) };
+        MAX_TIMER_COUNT - end
+    };
+    const WAIT_PM_TIMER_COUNT: u32 =
+        (PM_TIMER_FREQUENCY as u64 * INITIALIZATION_MILLIS as u64 / 1_000) as u32;
+    let lapic_count = count_lapic(&mut move || {
+        let start = read_time();
+        let goal = (start + WAIT_PM_TIMER_COUNT) & MASK;
+        if start > goal {
+            while read_time() >= start {}
+        }
+        while read_time() < goal {}
+    });
+    log::trace!("lapic count = {}", lapic_count);
+    let freq = (lapic_count as u64) * 1_000 / INITIALIZATION_MILLIS as u64;
+    log::trace!("LAPIC freq: {}", freq);
+    Ok(freq)
+}
+
+pub fn initialize(acpi2_rsdp: Option<*const core::ffi::c_void>) {
+    let timer_count = match get_lapic_frequency(acpi2_rsdp) {
+        Ok(freq) => (freq / TARGET_FREQUENCY as u64) as u32,
+        Err(e) => {
+            log::warn!(
+                "Unable to determine LAPIC frequency. Will fall back to a default. Reason: {:?}",
+                e
+            );
+            DEFAULT_TIMER_COUNT
+        }
+    };
+    log::info!("Set lapic count as {}", timer_count);
     unsafe {
-        core::ptr::write(DIVIDE_CONFIGURATION_ADDRESS, DIVIDE_1_1);
-        core::ptr::write(LVT_TIMER_ADDRESS, PERIODIC_INTERRUPT | VECTOR);
-        core::ptr::write(INITIAL_COUNT_ADDRESS, MAX_TIMER_COUNT);
+        core::ptr::write_volatile(DIVIDE_CONFIGURATION_ADDRESS, DIVIDE_1_1);
+        core::ptr::write_volatile(LVT_TIMER_ADDRESS, PERIODIC_INTERRUPT | VECTOR);
+        core::ptr::write_volatile(INITIAL_COUNT_ADDRESS, timer_count);
     }
 }
 
@@ -53,7 +145,6 @@ pub(crate) struct Timer {
 
 impl Timer {
     pub fn new() -> Self {
-        initialize(); // I guess it's not really good to do... but fine.
         Self {
             queue: BinaryHeap::new(),
             next_task_id: 0,

@@ -12,13 +12,15 @@ use memory_mapping::MemoryMapping;
 pub struct BootInfo {
     graphic_config: GraphicConfig,
     memory_mapping: MemoryMapping,
+    acpi2_rsdp: Option<*const core::ffi::c_void>
 }
 
 impl BootInfo {
-    pub fn new(graphic_config: GraphicConfig, memory_mapping: MemoryMapping) -> Self {
+    pub fn new(graphic_config: GraphicConfig, memory_mapping: MemoryMapping, acpi2_rsdp: Option<*const core::ffi::c_void>) -> Self {
         Self {
             graphic_config,
             memory_mapping,
+            acpi2_rsdp,
         }
     }
 
@@ -28,5 +30,9 @@ impl BootInfo {
 
     pub fn memory_mapping(&self) -> &MemoryMapping {
         &self.memory_mapping
+    }
+
+    pub fn acpi2_rsdp(&self) -> Option<*const core::ffi::c_void> {
+        self.acpi2_rsdp
     }
 }

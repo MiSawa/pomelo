@@ -54,7 +54,7 @@ fn actual_main(handle: Handle, mut st: SystemTable<Boot>) -> Result<()> {
     let graphic_config = read_graphic_config(&mut st)?;
 
     static mut MEMORY_MAP: [u8; MEMORY_MAP_BUF_SIZE] = [0; MEMORY_MAP_BUF_SIZE];
-    let (_st, memory_descriptor_iter) = st
+    let (st, memory_descriptor_iter) = st
         .exit_boot_services(handle, unsafe { &mut MEMORY_MAP })
         .expect_success("Failed to exit boot services");
 
@@ -74,9 +74,16 @@ fn actual_main(handle: Handle, mut st: SystemTable<Boot>) -> Result<()> {
 
     // We'd like to store the arguments to the kernel main in the heap instead of the stack.
     static mut BOOT_INFO: MaybeUninit<BootInfo> = MaybeUninit::uninit();
+    let acpi2_rsdp = st
+        .config_table()
+        .iter()
+        .filter(|e| e.guid == uefi::table::cfg::ACPI2_GUID)
+        .map(|e| e.address)
+        .next();
     unsafe { &mut BOOT_INFO }.write(BootInfo::new(
         graphic_config,
         MemoryMapping::new(initialized_descriptors),
+        acpi2_rsdp,
     ));
     let boot_info = unsafe { BOOT_INFO.assume_init_ref() };
     kernel_main(boot_info);

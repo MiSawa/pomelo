@@ -16,7 +16,7 @@ use pomelo_kernel::{
     msi::{configure_msi_fixed_destination, DeliveryMode, TriggerMode},
     paging, pci,
     prelude::*,
-    xhci,
+    timer, xhci,
 };
 
 #[no_mangle]
@@ -55,6 +55,7 @@ fn initialize(boot_info: &BootInfo) -> Result<GUI> {
     allocator::initialize(boot_info.memory_mapping());
     gdt::initialize();
     logger::initialize(log::LevelFilter::Warn)?;
+    timer::initialize(boot_info.acpi2_rsdp());
     let mut gui = gui::create_gui(boot_info.graphic_config());
     gui.render();
     interrupts::initialize();

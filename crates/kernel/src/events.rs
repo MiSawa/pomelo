@@ -13,6 +13,7 @@ use crate::{
 lazy_static! {
     static ref GLOAL_QUEUE: Spinlock<EventQueue> = Spinlock::new(Default::default());
 }
+const MAX_CHUNKED_REDRAW_COUNT: usize = 10;
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub enum Event {
@@ -57,16 +58,24 @@ pub fn fire_redraw() {
         q.redraw_events.push_back(Event::Redraw);
     });
 }
-
 pub fn fire_redraw_window(id: WindowID) {
     with_queue_locked(|mut q| {
-        q.redraw_events.push_back(Event::RedrawWindow(id));
+        if q.redraw_events.len() > MAX_CHUNKED_REDRAW_COUNT {
+            q.redraw_events.clear();
+            q.redraw_events.push_back(Event::Redraw);
+        } else {
+            q.redraw_events.push_back(Event::RedrawWindow(id));
+        }
     });
 }
-
 pub fn fire_redraw_area(area: Rectangle) {
     with_queue_locked(|mut q| {
-        q.redraw_events.push_back(Event::RedrawArea(area));
+        if q.redraw_events.len() > MAX_CHUNKED_REDRAW_COUNT {
+            q.redraw_events.clear();
+            q.redraw_events.push_back(Event::Redraw);
+        } else {
+            q.redraw_events.push_back(Event::RedrawArea(area));
+        }
     });
 }
 

@@ -5,6 +5,7 @@
 #![feature(maybe_uninit_uninit_array)]
 #![feature(int_roundings)]
 #![feature(generic_const_exprs)]
+#![feature(ptr_to_from_bits)]
 #![feature(once_cell)]
 
 #[macro_use]
@@ -57,11 +58,17 @@ pub mod prelude {
     #[derive(Debug)]
     pub enum Error {
         LogInitializeError(log::SetLoggerError),
+        AcpiError(acpi::AcpiError),
         Whatever(&'static str),
     }
     impl From<log::SetLoggerError> for Error {
         fn from(e: log::SetLoggerError) -> Self {
             Self::LogInitializeError(e)
+        }
+    }
+    impl From<acpi::AcpiError> for Error {
+        fn from(e: acpi::AcpiError) -> Self {
+            Self::AcpiError(e)
         }
     }
 }
