@@ -55,6 +55,7 @@ impl WindowID {
 pub struct Window {
     id: WindowID,
     position: Point,
+    draggable: bool,
     buffer: BufferCanvas<Vec<u8>>,
     container_size: Size,
 }
@@ -64,9 +65,14 @@ impl Window {
         Self {
             id: WindowID::generate(),
             position: Point::zero(),
+            draggable: true,
             buffer: BufferCanvas::vec_backed(pixel_format, size),
             container_size,
         }
+    }
+
+    pub fn set_draggable(&mut self, draggable: bool) {
+        self.draggable = draggable;
     }
 
     pub fn window_rectangle(&self) -> Rectangle {
@@ -198,10 +204,9 @@ impl LayerManager {
     }
 
     pub fn drag(&self, start: Point, end: Point) {
-        // TODO: How to exclude mouse cursor elegantly?
-        for layer in self.layers.iter().rev() {
+        for layer in self.layers.iter().chain(self.top_layers.iter()).rev() {
             let mut layer = layer.lock();
-            if layer.window_rectangle().contains(&start) {
+            if layer.draggable && layer.window_rectangle().contains(&start) {
                 layer.move_relative(end - start);
                 break;
             }

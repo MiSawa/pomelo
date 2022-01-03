@@ -102,11 +102,12 @@ impl Console {
 
     fn register(&mut self, layer_manager: &mut LayerManager) {
         for (i, row) in self.rows.iter_mut().enumerate() {
-            row.register_once(layer_manager)
-                .move_relative(Vector2d::new(
-                    0,
-                    GLYPH_HEIGHT as ICoordinate * i as ICoordinate,
-                ));
+            let widget = row.register_once(layer_manager);
+            widget.move_relative(Vector2d::new(
+                0,
+                GLYPH_HEIGHT as ICoordinate * i as ICoordinate,
+            ));
+            widget.set_draggable(false);
         }
     }
 

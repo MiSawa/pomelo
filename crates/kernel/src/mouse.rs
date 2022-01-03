@@ -18,6 +18,7 @@ pub fn initialize(layer_manager: &mut LayerManager) {
     MOUSE_CURSOR.lock().get_or_insert_with(|| {
         let cursor = MouseCursorImage;
         let mut widget = layer_manager.add_top(cursor);
+        widget.set_draggable(false);
         widget.move_relative(Vector2d::new(200, 200));
         widget.set_transparent_color(Some(TRANSPARENT_COLOR));
         MouseCursor {

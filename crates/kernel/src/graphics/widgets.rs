@@ -16,6 +16,10 @@ impl<D: Draw> Widget<D> {
         Self { layer, draw }
     }
 
+    pub fn set_draggable(&mut self, draggable: bool) {
+        self.layer.lock().set_draggable(draggable);
+    }
+
     pub fn window_id(&self) -> WindowID {
         self.layer.window_id()
     }

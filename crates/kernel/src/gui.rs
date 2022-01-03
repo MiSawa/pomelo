@@ -19,7 +19,7 @@ pub fn create_gui(graphic_config: &GraphicConfig) -> GUI {
         graphic_config.horisontal_resolution as UCoordinate,
         graphic_config.vertical_resolution as UCoordinate,
     );
-    layer_manager.add(widgets::Desktop::new(size));
+    layer_manager.add(widgets::Desktop::new(size)).set_draggable(false);
     console::register(&mut layer_manager);
     mouse::initialize(&mut layer_manager);
 
