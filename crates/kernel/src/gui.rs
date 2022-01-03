@@ -9,6 +9,7 @@ use crate::{
         widgets::{self, console},
         Draw, Point, Rectangle, Size, UCoordinate, Vector2d,
     },
+    keyboard::KeyCode,
     mouse,
     timer::Timer,
 };
@@ -110,5 +111,9 @@ impl GUI {
 
     pub fn drag(&self, start: Point, end: Point) {
         self.layer_manager.drag(start, end);
+    }
+
+    pub fn key_press(&self, key_code: KeyCode) {
+        self.layer_manager.key_press(key_code);
     }
 }

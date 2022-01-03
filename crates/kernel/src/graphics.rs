@@ -208,6 +208,24 @@ impl Rectangle {
             Self::empty()
         }
     }
+    #[must_use]
+    pub fn union(&self, other: &Self) -> Self {
+        let min_x = self.min_x().min(other.min_x());
+        let max_x = self.max_x().max(other.max_x());
+        let min_y = self.min_y().min(other.min_y());
+        let max_y = self.max_y().max(other.max_y());
+        if min_x <= max_x && min_y <= max_y {
+            Self::new(
+                Point::new(min_x, min_y),
+                Size::new(
+                    (max_x - min_x) as UCoordinate,
+                    (max_y - min_y) as UCoordinate,
+                ),
+            )
+        } else {
+            Self::empty()
+        }
+    }
 }
 
 impl core::ops::Add<Vector2d> for Rectangle {

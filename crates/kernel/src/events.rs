@@ -6,6 +6,7 @@ use x86_64::instructions::interrupts;
 use crate::{
     graphics::{layer::WindowID, Rectangle},
     gui::GUI,
+    keyboard::{self, KeyCode},
     prelude::*,
     xhci,
 };
@@ -20,6 +21,7 @@ pub enum Event {
     XHCI,
     LAPICTimer,
     Drag { start: Point, end: Point },
+    KeyPress(KeyCode),
     Redraw,
     RedrawWindow(WindowID),
     RedrawArea(Rectangle),
@@ -28,7 +30,7 @@ pub enum Event {
 #[derive(Default)]
 struct EventQueue {
     timer_events: VecDeque<Event>,
-    mouse_events: VecDeque<Event>,
+    input_event: VecDeque<Event>,
     xhci_events: VecDeque<Event>,
     redraw_events: VecDeque<Event>,
 }
@@ -49,7 +51,11 @@ pub fn fire_lapic_timer() {
 }
 
 pub fn fire_drag(start: Point, end: Point) {
-    with_queue_locked(|mut q| q.mouse_events.push_back(Event::Drag { start, end }));
+    with_queue_locked(|mut q| q.input_event.push_back(Event::Drag { start, end }));
+}
+
+pub fn fire_key_press(keycode: keyboard::KeyCode) {
+    with_queue_locked(|mut q| q.input_event.push_back(Event::KeyPress(keycode)));
 }
 
 pub fn fire_redraw() {
@@ -84,7 +90,7 @@ fn deque() -> Option<Event> {
         if let Some(ret) = q.timer_events.pop_front() {
             return Some(ret);
         }
-        if let Some(ret) = q.mouse_events.pop_front() {
+        if let Some(ret) = q.input_event.pop_front() {
             return Some(ret);
         }
         if let Some(ret) = q.xhci_events.pop_front() {
@@ -113,7 +119,9 @@ pub fn event_loop(mut gui: GUI) -> Result<!> {
                 }
                 Event::Drag { start, end } => {
                     gui.drag(start, end);
-                    fire_redraw();
+                }
+                Event::KeyPress(keycode) => {
+                    gui.key_press(keycode);
                 }
                 Event::Redraw => {
                     gui.render();

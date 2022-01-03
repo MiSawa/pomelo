@@ -1,7 +1,7 @@
 use mikanos_usb;
 use spinning_top::Spinlock;
 
-use crate::{mouse, pci};
+use crate::{keyboard, mouse, pci};
 
 lazy_static! {
     static ref XHC: Spinlock<Option<&'static mut mikanos_usb::xhci::Controller>> =
@@ -39,6 +39,7 @@ pub fn initialize(func: &pci::PCIFunction) {
         xhc.init();
         xhc.run().map_err(|_| "Failed to initialize xhc").unwrap();
         mikanos_usb::HidMouseDriver::set_default_observer(mouse::observe_cursor_move);
+        mikanos_usb::HidKeyboardDriver::set_default_observer(keyboard::observe_keyboard_event);
         xhc.configure_connected_ports();
         xhc
     });

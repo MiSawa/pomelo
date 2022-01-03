@@ -69,6 +69,12 @@ impl Row {
         self.text.try_push(c).ok();
         self.dirty = true;
     }
+
+    fn pop_char(&mut self) -> Option<char> {
+        let ret = self.text.pop();
+        self.dirty = true;
+        ret
+    }
 }
 impl Draw for Row {
     fn size(&self) -> Size {
@@ -141,13 +147,19 @@ impl Console {
         for c in s.chars() {
             if c == '\n' {
                 self.eol();
+            } else if c == '\x08' {
+                let row = &mut self.rows[self.current_row];
+                let row = row.unwrap_mut();
+                if row.pop_char().is_none() && self.current_row > 0 {
+                    self.current_row -= 1
+                }
             } else {
                 let row = &mut self.rows[self.current_row];
                 let row = row.unwrap_mut();
                 row.push_char(c);
             }
         }
-        for i in (0..self.current_row).rev() {
+        for i in (0..=self.current_row).rev() {
             let w = &mut self.rows[i];
             let row = w.unwrap_mut();
             if row.dirty {

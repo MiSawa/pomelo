@@ -20,6 +20,7 @@ pub mod gdt;
 pub mod graphics;
 pub mod gui;
 pub mod interrupts;
+pub(crate) mod keyboard;
 pub mod logger;
 pub(crate) mod memory_manager;
 pub(crate) mod mouse;
