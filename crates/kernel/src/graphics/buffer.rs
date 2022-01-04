@@ -5,6 +5,8 @@ use super::{canvas::Canvas, Color, ICoordinate, Point, Rectangle, Size, Vector2d
 
 pub const MAX_BYTES_PER_PIXEL: usize = 4;
 
+pub type VecBufferCanvas = BufferCanvas<Vec<u8>>;
+
 pub trait ByteBuffer {
     fn as_slice(&self) -> &[u8];
     fn as_mut_slice(&mut self) -> &mut [u8];
@@ -69,10 +71,21 @@ impl<B> BufferCanvas<B> {
 }
 
 impl BufferCanvas<Vec<u8>> {
+    pub fn empty(pixel_format: PixelFormat) -> Self {
+        Self::new(vec![0; 0], pixel_format, Size::zero(), 0)
+    }
+
     pub fn vec_backed(pixel_format: PixelFormat, size: Size) -> Self {
         let pixels_per_row = size.x as usize;
         let buffer_len = pixel_format.bytes_per_pixel() * (pixels_per_row * size.y as usize);
         Self::new(vec![0; buffer_len], pixel_format, size, pixels_per_row)
+    }
+
+    pub fn resize(&mut self, size: Size) {
+        let buffer_len = self.pixel_format.bytes_per_pixel() * (size.x as usize * size.y as usize);
+        self.buffer.resize(buffer_len, 0);
+        self.size = size;
+        self.bytes_per_row = size.x as usize * self.pixel_format.bytes_per_pixel();
     }
 }
 

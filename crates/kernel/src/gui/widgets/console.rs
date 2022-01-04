@@ -5,23 +5,26 @@ use spinning_top::Spinlock;
 
 use crate::{
     graphics::{
-        self,
+        buffer::VecBufferCanvas,
         canvas::{Canvas, GLYPH_HEIGHT, GLYPH_WIDTH},
-        window_manager::{WindowManager, MaybeRegistered},
         screen::{self, Screen},
         Color, Draw, ICoordinate, Point, Rectangle, Size, UCoordinate, Vector2d,
     },
+    gui::{
+        window_manager::{MaybeRegistered, WindowBuilder, WindowManager},
+        DESKTOP_BG_COLOR, DESKTOP_FG_COLOR,
+    },
     ring_buffer::ArrayRingBuffer,
 };
+
+use super::Widget;
 
 const ROWS: usize = 40;
 const COLUMNS: usize = 160;
 
 lazy_static! {
-    static ref GLOBAL_CONSOLE: Spinlock<Console> = Spinlock::new(Console::new(
-        graphics::DESKTOP_FG_COLOR,
-        graphics::DESKTOP_BG_COLOR
-    ));
+    static ref GLOBAL_CONSOLE: Spinlock<Console> =
+        Spinlock::new(Console::new(DESKTOP_FG_COLOR, DESKTOP_BG_COLOR));
 }
 lazy_static! {
     static ref FALLBACK_CONSOLE: Spinlock<Option<(Console, Screen)>> = Spinlock::new(None);
@@ -116,6 +119,17 @@ impl Draw for Row {
     }
 }
 
+impl Widget for Row {
+    fn render(&self, canvas: &mut VecBufferCanvas) {
+        canvas.resize(Size::new(
+            COLUMNS as UCoordinate * GLYPH_WIDTH,
+            GLYPH_HEIGHT,
+        ));
+        canvas.fill_rectangle(self.background, self.bounding_box());
+        canvas.draw_string(self.foreground, Point::zero(), self.text.as_str());
+    }
+}
+
 struct Console {
     rows: ArrayRingBuffer<MaybeRegistered<Row>, ROWS>,
     current_row: usize,
@@ -137,12 +151,16 @@ impl Console {
 
     fn register(&mut self, layer_manager: &mut WindowManager) {
         for (i, row) in self.rows.iter_mut().enumerate() {
-            let widget = row.register_once(layer_manager);
-            widget.move_relative(Vector2d::new(
-                0,
-                GLYPH_HEIGHT as ICoordinate * i as ICoordinate,
-            ));
-            widget.set_draggable(false);
+            row.register_once_with(layer_manager, |wm, r| {
+                wm.add_builder(
+                    WindowBuilder::new(r)
+                        .set_position(Point::new(
+                            0,
+                            GLYPH_HEIGHT as ICoordinate * i as ICoordinate,
+                        ))
+                        .set_draggable(false),
+                )
+            });
         }
     }
 
@@ -153,7 +171,7 @@ impl Console {
             let row = prev.unwrap_mut();
             row.clear();
             // Shift the top row down
-            if let Some(w) = prev.get_widget() {
+            if let Some(w) = prev.get_window() {
                 w.move_relative(Vector2d::new(
                     0,
                     GLYPH_HEIGHT as ICoordinate * (ROWS - 1) as ICoordinate,
@@ -161,7 +179,7 @@ impl Console {
             }
             // Shift other rows up
             for row in self.rows.iter_mut() {
-                if let Some(w) = row.get_widget() {
+                if let Some(w) = row.get_window() {
                     w.move_relative(Vector2d::new(0, -(GLYPH_HEIGHT as ICoordinate)));
                 }
             }

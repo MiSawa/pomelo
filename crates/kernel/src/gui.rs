@@ -4,17 +4,32 @@ use spinning_top::Spinlock;
 
 use crate::{
     graphics::{
-        buffer::BufferCanvas,
+        buffer::{BufferCanvas, VecBufferCanvas},
         canvas::Canvas,
-        window_manager::{self, WindowManager, WindowId},
         screen::{self, Screen},
-        widgets::{self, console, text_window::TextWindow, Framed},
-        Color, Draw, Point, Rectangle, Size, UCoordinate, Vector2d,
+        Color, Point, Rectangle, Size, UCoordinate, Vector2d,
+    },
+    gui::{
+        widgets::{console, text_window::TextWindow, Framed},
+        window_manager::{WindowId, WindowManager},
     },
     keyboard::KeyCode,
-    mouse,
     timer::Timer,
 };
+
+use self::{
+    widgets::{desktop::Desktop, Widget},
+    window_manager::WindowBuilder,
+    windows::Window,
+};
+
+pub mod mouse;
+pub mod widgets;
+pub mod window_manager;
+pub mod windows;
+
+pub const DESKTOP_FG_COLOR: Color = Color::WHITE;
+pub const DESKTOP_BG_COLOR: Color = Color::new(45, 118, 237);
 
 pub fn create_gui(graphic_config: &GraphicConfig) -> GUI {
     let mut window_manager = window_manager::create_window_manager(graphic_config);
@@ -23,9 +38,7 @@ pub fn create_gui(graphic_config: &GraphicConfig) -> GUI {
         graphic_config.horisontal_resolution as UCoordinate,
         graphic_config.vertical_resolution as UCoordinate,
     );
-    window_manager
-        .add(widgets::Desktop::new(size))
-        .set_draggable(false);
+    window_manager.add_builder(WindowBuilder::new(Desktop::new(size)).set_draggable(false));
     console::register(&mut window_manager);
     mouse::initialize(&mut window_manager);
 
@@ -44,7 +57,10 @@ pub fn create_gui(graphic_config: &GraphicConfig) -> GUI {
 
     timer.schedule(500, 500, move || {
         let mut text_field = cloned.lock();
-        text_field.draw_mut().draw_mut().flip_cursor_visibility();
+        text_field
+            .widget_mut()
+            .widget_mut()
+            .flip_cursor_visibility();
         text_field.buffer();
         crate::events::fire_redraw_window(text_field.window_id());
     });
@@ -55,7 +71,7 @@ pub fn create_gui(graphic_config: &GraphicConfig) -> GUI {
 }
 
 lazy_static! {
-    static ref TASK_B_FRAME: Spinlock<Option<widgets::Widget<widgets::Framed<Counter>>>> =
+    static ref TASK_B_FRAME: Spinlock<Option<Window<widgets::Framed<Counter>>>> =
         Spinlock::new(None);
 }
 
@@ -73,7 +89,7 @@ extern "sysv64" fn task_b_main(arg: u64) {
     let mut locked = TASK_B_FRAME.lock();
     let frame = locked.as_mut().unwrap();
     loop {
-        frame.draw_mut().draw_mut().inc();
+        frame.widget_mut().widget_mut().inc();
         frame.buffer();
         crate::events::fire_redraw_window(frame.window_id());
         x86_64::instructions::interrupts::enable_and_hlt();
@@ -89,14 +105,12 @@ impl Counter {
         self.0 += 1;
     }
 }
-impl Draw for Counter {
-    fn size(&self) -> Size {
-        Size::new(
+impl Widget for Counter {
+    fn render(&self, canvas: &mut VecBufferCanvas) {
+        canvas.resize(Size::new(
             crate::graphics::canvas::GLYPH_WIDTH * 20,
             crate::graphics::canvas::GLYPH_HEIGHT,
-        )
-    }
-    fn draw<C: crate::graphics::canvas::Canvas>(&self, canvas: &mut C) {
+        ));
         canvas
             .draw_fmt(Color::BLACK, Point::zero(), format_args!("{:010}", self.0))
             .ok();
@@ -108,8 +122,8 @@ pub struct GUI {
     screen: Screen,
     buffer: BufferCanvas<alloc::vec::Vec<u8>>,
     timer: Timer,
-    counter: widgets::Widget<widgets::Framed<Counter>>,
-    text_field: Rc<Spinlock<widgets::Widget<widgets::Framed<TextWindow>>>>,
+    counter: Window<widgets::Framed<Counter>>,
+    text_field: Rc<Spinlock<Window<widgets::Framed<TextWindow>>>>,
 }
 
 impl GUI {
@@ -117,8 +131,8 @@ impl GUI {
         window_manager: WindowManager,
         screen: Screen,
         timer: Timer,
-        counter: widgets::Widget<widgets::Framed<Counter>>,
-        text_field: Rc<Spinlock<widgets::Widget<widgets::Framed<TextWindow>>>>,
+        counter: Window<widgets::Framed<Counter>>,
+        text_field: Rc<Spinlock<Window<widgets::Framed<TextWindow>>>>,
     ) -> Self {
         let buffer = BufferCanvas::vec_backed(screen.pixel_format(), screen.size());
         Self {
@@ -132,7 +146,7 @@ impl GUI {
     }
 
     pub fn render(&mut self) {
-        self.window_manager.draw(&mut self.buffer);
+        self.window_manager.render(&mut self.buffer);
         self.screen.draw_buffer(Vector2d::zero(), &self.buffer);
     }
 
@@ -151,7 +165,7 @@ impl GUI {
 
     pub fn tick(&mut self) {
         self.timer.tick();
-        self.counter.draw_mut().draw_mut().inc();
+        self.counter.widget_mut().widget_mut().inc();
         self.counter.buffer();
         self.render_window(self.counter.window_id());
     }
@@ -163,7 +177,7 @@ impl GUI {
     pub fn key_press(&mut self, key_code: KeyCode) {
         if let Some(c) = key_code.to_char() {
             let mut locked = self.text_field.lock();
-            locked.draw_mut().draw_mut().push(c);
+            locked.widget_mut().widget_mut().push(c);
             locked.buffer();
             crate::events::fire_redraw_window(locked.window_id());
         }

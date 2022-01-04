@@ -3,14 +3,9 @@ use self::canvas::Canvas;
 pub mod buffer;
 pub(crate) mod canvas;
 pub(crate) mod screen;
-pub mod widgets;
-pub(crate) mod window_manager;
-pub(crate) mod windows;
 
 pub type ICoordinate = i32;
 pub type UCoordinate = u32;
-pub const DESKTOP_FG_COLOR: Color = Color::BLACK;
-pub const DESKTOP_BG_COLOR: Color = Color::new(45, 118, 237);
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Default)]
 pub struct Point {
@@ -26,8 +21,8 @@ impl Point {
         Self { x, y }
     }
     #[must_use]
-    pub const fn clamped(&self, r: Rectangle) -> Point {
-        let p = *self;
+    pub fn clamped(&self, r: Rectangle) -> Point {
+        let mut p = self.clone();
         p.x = p.x.clamp(r.min_x(), r.max_x());
         p.y = p.y.clamp(r.min_x(), r.max_x());
         p

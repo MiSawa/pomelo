@@ -1,4 +1,7 @@
-use core::{arch::asm, sync::atomic::{AtomicU32, Ordering}};
+use core::{
+    arch::asm,
+    sync::atomic::{AtomicU32, Ordering},
+};
 
 use crate::prelude::*;
 use alloc::{boxed::Box, vec, vec::Vec};
@@ -14,9 +17,11 @@ const TICKS_PER_PREEMPTION: u32 = crate::timer::TARGET_FREQUENCY / PREEMPTION_FR
 static TICKS_UNTIL_NEXT_PREEMPTION: AtomicU32 = AtomicU32::new(0);
 
 pub fn tick_and_check_context_switch() -> bool {
-    let ret = TICKS_UNTIL_NEXT_PREEMPTION.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |prev| {
-        Some(prev.saturating_sub(1))
-    }).unwrap();
+    let ret = TICKS_UNTIL_NEXT_PREEMPTION
+        .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |prev| {
+            Some(prev.saturating_sub(1))
+        })
+        .unwrap();
     ret == 0
 }
 

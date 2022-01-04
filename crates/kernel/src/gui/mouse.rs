@@ -2,9 +2,12 @@ use bitflags::bitflags;
 use spinning_top::Spinlock;
 
 use crate::{
-    graphics::{canvas::Canvas, window_manager::WindowManager, widgets::Widget, Color, Draw},
+    graphics::{buffer::VecBufferCanvas, canvas::Canvas, Color},
+    gui::{widgets::Widget, window_manager::WindowManager},
     prelude::*,
 };
+
+use super::{window_manager::WindowBuilder, windows::Window};
 
 lazy_static! {
     static ref MOUSE_CURSOR: Spinlock<Option<MouseCursor>> = Spinlock::new(Option::None);
@@ -17,12 +20,13 @@ const TRANSPARENT_COLOR: Color = Color::new(1, 2, 3);
 pub fn initialize(window_manager: &mut WindowManager) {
     MOUSE_CURSOR.lock().get_or_insert_with(|| {
         let cursor = MouseCursorImage;
-        let mut widget = window_manager.add_top(cursor);
-        widget.set_draggable(false);
-        widget.move_relative(Vector2d::new(200, 200));
-        widget.set_transparent_color(Some(TRANSPARENT_COLOR));
+        let window = window_manager.add_builder(
+            WindowBuilder::new(cursor)
+                .set_draggable(false)
+                .set_position(Point::new(200, 200)),
+        );
         MouseCursor {
-            widget,
+            window,
             buttons: MouseButtons::empty(),
         }
     });
@@ -46,13 +50,13 @@ bitflags! {
 }
 
 struct MouseCursor {
-    widget: Widget<MouseCursorImage>,
+    window: Window<MouseCursorImage>,
     buttons: MouseButtons,
 }
 
 impl MouseCursor {
     fn handle_event(&mut self, buttons: MouseButtons, v: Vector2d) {
-        let (start, end) = self.widget.move_relative(v);
+        let (start, end) = self.window.move_relative(v);
         if self.buttons.contains(MouseButtons::LEFT) && buttons.contains(MouseButtons::LEFT) {
             crate::events::fire_drag(start, end);
         }
@@ -62,12 +66,10 @@ impl MouseCursor {
 
 struct MouseCursorImage;
 
-impl Draw for MouseCursorImage {
-    fn size(&self) -> Size {
-        Size::new(WIDTH as UCoordinate, HEIGHT as UCoordinate)
-    }
-
-    fn draw<C: Canvas>(&self, canvas: &mut C) {
+impl Widget for MouseCursorImage {
+    fn render(&self, canvas: &mut VecBufferCanvas) {
+        canvas.set_transparent_color(Some(TRANSPARENT_COLOR));
+        canvas.resize(Size::new(WIDTH as UCoordinate, HEIGHT as UCoordinate));
         for (y, row) in MOUSE_CURSOR_SHAPE.iter().enumerate() {
             for (x, cell) in row.iter().enumerate() {
                 let color = match cell {

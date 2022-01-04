@@ -4,8 +4,8 @@ use spinning_top::Spinlock;
 use x86_64::instructions::interrupts;
 
 use crate::{
-    graphics::{window_manager::WindowId, Rectangle},
-    gui::GUI,
+    graphics::Rectangle,
+    gui::{window_manager::WindowId, GUI},
     keyboard::{self, KeyCode},
     prelude::*,
     xhci,

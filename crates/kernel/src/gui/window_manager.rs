@@ -6,12 +6,13 @@ use alloc::{sync::Arc, vec, vec::Vec};
 use pomelo_common::graphics::{GraphicConfig, PixelFormat};
 use spinning_top::{Spinlock, SpinlockGuard};
 
+use super::{widgets::Widget, windows::Window};
 use crate::{
     graphics::{
-        buffer::BufferCanvas, canvas::Canvas, widgets::Widget, Color, Draw, ICoordinate, Point,
-        Rectangle, Size, UCoordinate, Vector2d,
+        buffer::VecBufferCanvas, canvas::Canvas, Point, Rectangle, Size,
+        UCoordinate, Vector2d,
     },
-    triple_buffer::{Consumer, Producer, TripleBuffer},
+    triple_buffer::{Consumer, TripleBuffer},
 };
 
 pub fn create_window_manager(graphic_config: &GraphicConfig) -> WindowManager {
@@ -39,6 +40,7 @@ pub struct WindowState {
     id: WindowId,
     position: Point,
     draggable: bool,
+    screen_size: Size,
 }
 
 #[derive(Clone, Debug)]
@@ -46,12 +48,13 @@ pub struct WindowStateShared {
     inner: Arc<Spinlock<WindowState>>,
 }
 impl WindowStateShared {
-    fn new() -> Self {
+    fn new(screen_size: Size) -> Self {
         Self {
             inner: Arc::new(Spinlock::new(WindowState {
                 id: WindowId::generate(),
                 position: Point::zero(),
                 draggable: false,
+                screen_size,
             })),
         }
     }
@@ -61,26 +64,37 @@ impl WindowStateShared {
     fn position(&self) -> Point {
         self.locked().position
     }
+    pub fn move_relative(&mut self, v: Vector2d) -> (Point, Point) {
+        let mut locked = self.locked();
+        let old_position = locked.position;
+        locked.position =
+            (locked.position + v).clamped(Rectangle::new(Point::zero(), locked.screen_size));
+        (old_position, locked.position)
+    }
 }
 
 struct WindowHandle {
     id: WindowId,
     state: WindowStateShared,
-    buffer: Consumer<BufferCanvas<Vec<u8>>>,
+    buffer: Consumer<VecBufferCanvas>,
 }
 
-pub enum MaybeRegistered<D: Draw> {
-    Unregistered(D),
-    Registered(Widget<D>),
+pub enum MaybeRegistered<W: Widget> {
+    Unregistered(W),
+    Registered(Window<W>),
     // Ugggh I want replace_with
     Registering,
 }
 
-impl<D: Draw> MaybeRegistered<D> {
-    pub fn register_once(&mut self, window_manager: &mut WindowManager) -> &mut Widget<D> {
+impl<W: Widget> MaybeRegistered<W> {
+    pub fn register_once_with(
+        &mut self,
+        window_manager: &mut WindowManager,
+        f: impl FnOnce(&mut WindowManager, W) -> Window<W>,
+    ) -> &mut Window<W> {
         let took = core::mem::replace(self, Self::Registering);
         *self = match took {
-            MaybeRegistered::Unregistered(d) => Self::Registered(window_manager.add(d)),
+            MaybeRegistered::Unregistered(w) => Self::Registered(f(window_manager, w)),
             other => other,
         };
         if let MaybeRegistered::Registered(w) = self {
@@ -89,17 +103,17 @@ impl<D: Draw> MaybeRegistered<D> {
             panic!("Whaaat, maybe it failed to register itself?")
         }
     }
-    pub fn unwrap_ref(&self) -> &D {
+    pub fn unwrap_ref(&self) -> &W {
         match self {
-            MaybeRegistered::Unregistered(d) => d,
-            MaybeRegistered::Registered(w) => w.draw_ref(),
+            MaybeRegistered::Unregistered(w) => w,
+            MaybeRegistered::Registered(w) => w.widget_ref(),
             _ => panic!("Whaaat, maybe it failed to register itself?"),
         }
     }
-    pub fn unwrap_mut(&mut self) -> &mut D {
+    pub fn unwrap_mut(&mut self) -> &mut W {
         match self {
-            MaybeRegistered::Unregistered(d) => d,
-            MaybeRegistered::Registered(w) => w.draw_mut(),
+            MaybeRegistered::Unregistered(w) => w,
+            MaybeRegistered::Registered(w) => w.widget_mut(),
             _ => panic!("Whaaat, maybe it failed to register itself?"),
         }
     }
@@ -108,7 +122,7 @@ impl<D: Draw> MaybeRegistered<D> {
             w.buffer();
         }
     }
-    pub fn get_widget(&mut self) -> Option<&mut Widget<D>> {
+    pub fn get_window(&mut self) -> Option<&mut Window<W>> {
         if let MaybeRegistered::Registered(w) = self {
             Some(w)
         } else {
@@ -117,11 +131,43 @@ impl<D: Draw> MaybeRegistered<D> {
     }
 }
 
+pub struct WindowBuilder<W: Widget> {
+    widget: W,
+    position: Point,
+    draggable: bool,
+    top: bool,
+}
+
+impl<W: Widget> WindowBuilder<W> {
+    pub fn new(widget: W) -> Self {
+        Self {
+            widget,
+            position: Point::zero(),
+            draggable: false,
+            top: false,
+        }
+    }
+
+    pub fn set_position(mut self, position: Point) -> Self {
+        self.position = position;
+        self
+    }
+
+    pub fn set_draggable(mut self, draggable: bool) -> Self {
+        self.draggable = draggable;
+        self
+    }
+
+    pub fn set_top(mut self, top: bool) -> Self {
+        self.top = top;
+        self
+    }
+}
+
 pub struct WindowManager {
     pixel_format: PixelFormat,
     layers: Vec<WindowHandle>,
     top_layers: Vec<WindowHandle>,
-    focused: Option<WindowId>,
     size: Size,
 }
 
@@ -131,45 +177,50 @@ impl WindowManager {
             pixel_format,
             layers: vec![],
             top_layers: vec![],
-            focused: None,
             size,
         }
     }
 
-    fn create_window(&self, size: Size) -> (WindowHandle, Window) {
-        let state = WindowStateShared::new();
+    fn create_window<W: Widget>(&self, widget: W) -> (WindowHandle, Window<W>) {
+        let state = WindowStateShared::new(self.size);
         let (producer, consumer) =
-            TripleBuffer::from_fn(|| BufferCanvas::vec_backed(self.pixel_format, size)).split();
+            TripleBuffer::from_fn(|| VecBufferCanvas::empty(self.pixel_format)).split();
         let id = state.locked().id;
         (
             WindowHandle {
                 id,
-                state,
+                state: state.clone(),
                 buffer: consumer,
             },
-            Window {
-                id,
-                state,
-                buffer: producer,
-            },
+            Window::new(id, state, producer, widget),
         )
     }
 
-    pub fn add_top<D: Draw>(&mut self, draw: D) -> Widget<D> {
-        let (handle, window) = self.create_window(draw.size());
-        self.top_layers.push(handle);
-        Widget::new(window, draw)
+    pub fn add_builder<W: Widget>(&mut self, builder: WindowBuilder<W>) -> Window<W> {
+        let (handle, mut window) = self.create_window(builder.widget);
+        let mut state = handle.state.locked();
+        state.position = builder.position;
+        state.draggable = builder.draggable;
+        drop(state);
+        if builder.top {
+            self.top_layers.push(handle);
+        } else {
+            self.layers.push(handle);
+        }
+        window.buffer();
+        window
     }
 
-    pub fn add<D: Draw>(&mut self, draw: D) -> Widget<D> {
-        let (handle, window) = self.create_window(draw.size());
+    pub fn add<W: Widget>(&mut self, widget: W) -> Window<W> {
+        let (handle, mut window) = self.create_window(widget);
         self.layers.push(handle);
-        Widget::new(window, draw)
+        window.buffer();
+        window
     }
 
-    pub fn draw_window<C: Canvas>(&self, canvas: &mut C, id: WindowId) -> Option<Rectangle> {
+    pub fn draw_window<C: Canvas>(&mut self, canvas: &mut C, id: WindowId) -> Option<Rectangle> {
         let mut redraw_area = None;
-        for window in self.layers.iter().chain(self.top_layers.iter()) {
+        for window in self.layers.iter_mut().chain(self.top_layers.iter_mut()) {
             if window.id == id {
                 let buffer = window.buffer.read();
                 let pos = window.state.locked().position;
@@ -185,8 +236,8 @@ impl WindowManager {
         redraw_area
     }
 
-    pub fn draw_area<C: Canvas>(&self, canvas: &mut C, area: Rectangle) {
-        for window in self.layers.iter().chain(self.top_layers.iter()) {
+    pub fn draw_area<C: Canvas>(&mut self, canvas: &mut C, area: Rectangle) {
+        for window in self.layers.iter_mut().chain(self.top_layers.iter_mut()) {
             let buffer = window.buffer.read();
             let pos = window.state.position();
             canvas.draw_buffer_area(pos.into(), buffer, area);
@@ -199,7 +250,7 @@ impl WindowManager {
             let pos = state.position;
             let rect = Rectangle::new(pos, window.buffer.read_last_buffer().size());
             if state.draggable && rect.contains(&start) {
-                let screen_rect = self.bounding_box();
+                let screen_rect = Rectangle::new(Point::zero(), self.size);
                 state.position = (state.position + (end - start)).clamped(screen_rect);
                 let new_rect = rect + (state.position - pos);
                 crate::events::fire_redraw_area(rect.union(&new_rect));
@@ -207,15 +258,9 @@ impl WindowManager {
             }
         }
     }
-}
 
-impl Draw for WindowManager {
-    fn size(&self) -> Size {
-        self.size
-    }
-
-    fn draw<C: Canvas>(&self, canvas: &mut C) {
-        for window in self.layers.iter().chain(self.top_layers.iter()) {
+    pub fn render(&mut self, canvas: &mut impl Canvas) {
+        for window in self.layers.iter_mut().chain(self.top_layers.iter_mut()) {
             let buffer = window.buffer.read();
             let pos = window.state.position();
             canvas.draw_buffer(pos.into(), buffer);

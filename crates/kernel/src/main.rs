@@ -10,8 +10,7 @@ use pomelo_common::BootInfo;
 
 use pomelo_kernel::{
     allocator, events, gdt,
-    graphics::widgets::console,
-    gui::{self, GUI},
+    gui::{self, widgets::console, GUI},
     interrupts::{self, InterruptIndex},
     logger,
     msi::{configure_msi_fixed_destination, DeliveryMode, TriggerMode},

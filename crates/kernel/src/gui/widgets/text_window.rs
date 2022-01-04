@@ -1,9 +1,14 @@
 use alloc::string::String;
 
 use crate::graphics::{
-    canvas::{GLYPH_HEIGHT, GLYPH_WIDTH},
-    Color, Draw, ICoordinate, Point, Rectangle, Size, UCoordinate,
+    buffer::VecBufferCanvas,
+    canvas::{Canvas, GLYPH_HEIGHT, GLYPH_WIDTH},
+    Color, ICoordinate, Point, Rectangle, Size, UCoordinate,
 };
+
+use super::Widget;
+
+const TRANSPARENT_COLOR: Color = Color::new(1, 2, 3);
 
 pub struct TextWindow {
     buffer: String,
@@ -33,13 +38,11 @@ impl TextWindow {
     }
 }
 
-impl Draw for TextWindow {
-    fn size(&self) -> crate::graphics::Size {
-        self.size
-    }
-
-    fn draw<C: crate::graphics::canvas::Canvas>(&self, canvas: &mut C) {
-        canvas.fill_rectangle(self.background, self.bounding_box());
+impl Widget for TextWindow {
+    fn render(&self, canvas: &mut VecBufferCanvas) {
+        canvas.resize(self.size);
+        canvas.set_transparent_color(Some(TRANSPARENT_COLOR));
+        canvas.fill_rectangle(self.background, Rectangle::new(Point::zero(), self.size));
         let i = canvas.draw_string(self.foreground, Point::zero(), &self.buffer);
         if self.cursor_visible {
             canvas.fill_rectangle(

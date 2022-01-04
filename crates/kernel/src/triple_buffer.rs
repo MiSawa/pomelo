@@ -120,4 +120,3 @@ struct SharedState<T> {
     free_index: AtomicI,
 }
 unsafe impl<T: Send> Sync for SharedState<T> {}
-

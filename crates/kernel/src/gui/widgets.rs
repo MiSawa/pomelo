@@ -1,116 +1,36 @@
-use super::{
-    canvas::Canvas,
-    window_manager::{WindowId},
-    Color, Draw, ICoordinate, Point, Rectangle, Size, Vector2d, DESKTOP_BG_COLOR,
+use crate::graphics::{
+    buffer::VecBufferCanvas, canvas::Canvas, Color, ICoordinate, Point, Rectangle, Size,
+    Vector2d,
 };
 
 pub mod console;
+pub mod desktop;
 pub mod text_window;
 
-pub struct Widget<D: Draw> {
-    layer: SharedWindow,
-    draw: D,
+pub trait Widget {
+    fn render(&self, canvas: &mut VecBufferCanvas);
 }
 
-impl<D: Draw> Widget<D> {
-    pub fn new(layer: SharedWindow, draw: D) -> Self {
-        Self { layer, draw }
-    }
-
-    pub fn set_draggable(&mut self, draggable: bool) {
-        self.layer.lock().set_draggable(draggable);
-    }
-
-    pub fn window_id(&self) -> WindowId {
-        self.layer.window_id()
-    }
-
-    pub fn move_relative(&mut self, v: Vector2d) -> (Point, Point) {
-        let mut locked = self.layer.lock();
-        locked.move_relative(v)
-    }
-
-    pub fn set_transparent_color(&mut self, transparent_color: Option<Color>) {
-        self.layer.lock().set_transparent_color(transparent_color)
-    }
-
-    pub fn transparent_color(&mut self) -> Option<Color> {
-        self.layer.lock().transparent_color()
-    }
-
-    pub fn draw_ref(&self) -> &D {
-        &self.draw
-    }
-
-    pub fn draw_mut(&mut self) -> &mut D {
-        &mut self.draw
-    }
-
-    pub fn buffer(&mut self) {
-        let mut locked = self.layer.lock();
-        locked.buffer(&self.draw);
-    }
-}
-
-pub struct Desktop {
-    size: Size,
-}
-impl Desktop {
-    pub fn new(size: Size) -> Self {
-        Self { size }
-    }
-}
-impl Draw for Desktop {
-    fn size(&self) -> Size {
-        self.size
-    }
-
-    fn draw<C: Canvas>(&self, canvas: &mut C) {
-        canvas.fill_rectangle(DESKTOP_BG_COLOR, canvas.bounding_box());
-        canvas.fill_rectangle(
-            Color::new(1, 8, 17),
-            Rectangle::new(
-                Point::new(0, self.size.y as ICoordinate - 50),
-                Size::new(self.size.x, 50),
-            ),
-        );
-        canvas.fill_rectangle(
-            Color::new(80, 80, 80),
-            Rectangle::new(
-                Point::new(0, self.size.y as ICoordinate - 50),
-                Size::new(self.size.x / 5, 50),
-            ),
-        );
-        canvas.fill_rectangle(
-            Color::new(160, 160, 160),
-            Rectangle::new(
-                Point::new(10, self.size.y as ICoordinate - 40),
-                Size::new(30, 30),
-            ),
-        );
-    }
-}
-
-pub struct Framed<D: Draw> {
+pub struct Framed<W: Widget> {
     title: alloc::string::String,
-    draw: D,
+    widget: W,
 }
-impl<D: Draw> Framed<D> {
-    pub fn new(title: alloc::string::String, draw: D) -> Self {
-        Self { title, draw }
+impl<W: Widget> Framed<W> {
+    pub fn new(title: alloc::string::String, widget: W) -> Self {
+        Self { title, widget }
     }
-    pub fn draw_mut(&mut self) -> &mut D {
-        &mut self.draw
+    pub fn widget_mut(&mut self) -> &mut W {
+        &mut self.widget
     }
 }
-impl<D: Draw> Draw for Framed<D> {
-    fn size(&self) -> Size {
-        let inner = self.draw.size();
-        Size::new(inner.x + 8, inner.y + 32)
-    }
-
-    fn draw<C: crate::graphics::canvas::Canvas>(&self, canvas: &mut C) {
-        let size = self.size();
+impl<W: Widget> Widget for Framed<W> {
+    fn render(&self, canvas: &mut VecBufferCanvas) {
+        let mut buffer = VecBufferCanvas::empty(canvas.pixel_format());
+        self.widget.render(&mut buffer);
+        let mut size = buffer.size();
+        size.x += 8;
+        size.y += 32;
+        canvas.resize(size);
         canvas.fill_rectangle(
             Color::gray_scale(0xC6),
             Rectangle::new(Point::new(0, 0), Size::new(size.x, 1)),
@@ -182,11 +102,7 @@ impl<D: Draw> Draw for Framed<D> {
                 );
             }
         }
-        let mut restricted = canvas.restricted(Rectangle::new(
-            Point::new(4, 28),
-            Size::new(size.x - 8, size.y - 32),
-        ));
-        self.draw.draw(&mut restricted);
+        canvas.draw_buffer(Vector2d::new(4, 28), &buffer)
     }
 }
 

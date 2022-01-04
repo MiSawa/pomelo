@@ -1,7 +1,7 @@
 use mikanos_usb;
 use spinning_top::Spinlock;
 
-use crate::{keyboard, mouse, pci};
+use crate::{gui::mouse, keyboard, pci};
 
 lazy_static! {
     static ref XHC: Spinlock<Option<&'static mut mikanos_usb::xhci::Controller>> =
