@@ -6,8 +6,6 @@ use alloc::{sync::Arc, vec, vec::Vec};
 use pomelo_common::graphics::{GraphicConfig, PixelFormat};
 use spinning_top::Spinlock;
 
-use crate::keyboard::KeyCode;
-
 use super::{
     buffer::BufferCanvas, canvas::Canvas, widgets::Widget, Color, Draw, ICoordinate, Point,
     Rectangle, Size, UCoordinate, Vector2d,
@@ -153,6 +151,7 @@ pub struct LayerManager {
     pixel_format: PixelFormat,
     layers: Vec<SharedWindow>,
     top_layers: Vec<SharedWindow>,
+    focused: Option<WindowID>,
     size: Size,
 }
 
@@ -162,6 +161,7 @@ impl LayerManager {
             pixel_format,
             layers: vec![],
             top_layers: vec![],
+            focused: None,
             size,
         }
     }
@@ -205,7 +205,7 @@ impl LayerManager {
         }
     }
 
-    pub fn drag(&self, start: Point, end: Point) {
+    pub fn drag(&mut self, start: Point, end: Point) {
         for layer in self.layers.iter().chain(self.top_layers.iter()).rev() {
             let mut layer = layer.lock();
             let rect = layer.window_rectangle();
@@ -213,14 +213,9 @@ impl LayerManager {
                 layer.move_relative(end - start);
                 let new_rect = layer.window_rectangle();
                 crate::events::fire_redraw_area(rect.union(&new_rect));
+                self.focused = Some(layer.id);
                 break;
             }
-        }
-    }
-    pub fn key_press(&self, key_code: KeyCode) {
-        // TODO
-        if let Some(c) = key_code.to_char() {
-            crate::print!("{}", c);
         }
     }
 }

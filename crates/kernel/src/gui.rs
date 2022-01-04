@@ -1,4 +1,6 @@
+use alloc::rc::Rc;
 use pomelo_common::graphics::GraphicConfig;
+use spinning_top::Spinlock;
 
 use crate::{
     graphics::{
@@ -6,8 +8,8 @@ use crate::{
         canvas::Canvas,
         layer::{self, LayerManager, WindowID},
         screen::{self, Screen},
-        widgets::{self, console},
-        Draw, Point, Rectangle, Size, UCoordinate, Vector2d,
+        widgets::{self, console, text_window::TextWindow, Framed},
+        Color, Draw, Point, Rectangle, Size, UCoordinate, Vector2d,
     },
     keyboard::KeyCode,
     mouse,
@@ -28,12 +30,27 @@ pub fn create_gui(graphic_config: &GraphicConfig) -> GUI {
     mouse::initialize(&mut layer_manager);
 
     use alloc::string::ToString;
-    let counter = crate::graphics::widgets::Framed::new("Counter".to_string(), Counter::new());
+    let counter = Framed::new("Counter".to_string(), Counter::new());
     let mut counter = layer_manager.add(counter);
-    counter.buffer();
     counter.move_relative(crate::graphics::Vector2d::new(300, 200));
-    let timer = Timer::new();
-    GUI::new(layer_manager, screen, timer, counter)
+
+    let text_field = TextWindow::new(Color::BLACK, Color::WHITE, 30);
+    let text_field = Framed::new("Text box".to_string(), text_field);
+    let mut text_field = layer_manager.add(text_field);
+    text_field.move_relative(crate::graphics::Vector2d::new(300, 300));
+    let text_field = Rc::new(Spinlock::new(text_field));
+    let cloned = text_field.clone();
+
+    let mut timer = Timer::new();
+
+    timer.schedule(500, 500, move || {
+        let mut text_field = cloned.lock();
+        text_field.draw_mut().draw_mut().flip_cursor_visibility();
+        text_field.buffer();
+        crate::events::fire_redraw_window(text_field.window_id());
+    });
+
+    GUI::new(layer_manager, screen, timer, counter, text_field)
 }
 pub struct Counter(usize);
 impl Counter {
@@ -52,7 +69,6 @@ impl Draw for Counter {
         )
     }
     fn draw<C: crate::graphics::canvas::Canvas>(&self, canvas: &mut C) {
-        use super::graphics::Color;
         canvas
             .draw_fmt(Color::BLACK, Point::zero(), format_args!("{:010}", self.0))
             .ok();
@@ -65,6 +81,7 @@ pub struct GUI {
     buffer: BufferCanvas<alloc::vec::Vec<u8>>,
     timer: Timer,
     counter: widgets::Widget<widgets::Framed<Counter>>,
+    text_field: Rc<Spinlock<widgets::Widget<widgets::Framed<TextWindow>>>>,
 }
 
 impl GUI {
@@ -73,6 +90,7 @@ impl GUI {
         screen: Screen,
         timer: Timer,
         counter: widgets::Widget<widgets::Framed<Counter>>,
+        text_field: Rc<Spinlock<widgets::Widget<widgets::Framed<TextWindow>>>>,
     ) -> Self {
         let buffer = BufferCanvas::vec_backed(screen.pixel_format(), screen.size());
         Self {
@@ -81,6 +99,7 @@ impl GUI {
             buffer,
             timer,
             counter,
+            text_field,
         }
     }
 
@@ -109,11 +128,16 @@ impl GUI {
         self.render_window(self.counter.window_id());
     }
 
-    pub fn drag(&self, start: Point, end: Point) {
+    pub fn drag(&mut self, start: Point, end: Point) {
         self.layer_manager.drag(start, end);
     }
 
-    pub fn key_press(&self, key_code: KeyCode) {
-        self.layer_manager.key_press(key_code);
+    pub fn key_press(&mut self, key_code: KeyCode) {
+        if let Some(c) = key_code.to_char() {
+            let mut locked = self.text_field.lock();
+            locked.draw_mut().draw_mut().push(c);
+            locked.buffer();
+            crate::events::fire_redraw_window(locked.window_id());
+        }
     }
 }

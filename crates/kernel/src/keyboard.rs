@@ -23,7 +23,7 @@ bitflags! {
 pub struct KeyCode(Modifiers, u8);
 
 impl KeyCode {
-    pub fn to_char(&self) -> Option<char> {
+    pub fn to_char(self) -> Option<char> {
         if self.1 >= 104 {
             return None;
         }

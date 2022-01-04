@@ -1,11 +1,13 @@
 use core::cmp::Reverse;
 
-use alloc::{boxed::Box, collections::binary_heap::BinaryHeap};
+use alloc::{boxed::Box, collections::binary_heap::BinaryHeap, rc::Rc};
 
 use crate::{interrupts::InterruptIndex, prelude::*};
 
 /// The target value of LAPIC timer frequency
 const TARGET_FREQUENCY: u32 = 100; // once per 10 ms
+const MILLISEC_PER_TICK: u64 = 1000 / TARGET_FREQUENCY as u64;
+
 /// How much duration we will use to adjust the LAPIC timer frequency
 const INITIALIZATION_MILLIS: u32 = 1000;
 const MAX_TIMER_COUNT: u32 = u32::MAX;
@@ -115,30 +117,39 @@ pub fn initialize(acpi2_rsdp: Option<*const core::ffi::c_void>) {
     }
 }
 
-struct Task {
+enum Task {
+    Oneshot {
+        callback: Box<dyn FnMut()>,
+    },
+    Periodic {
+        interval_ticks: u64,
+        callback: Box<dyn FnMut()>,
+    },
+}
+struct TaskEntry {
     target_tick: u64,
     task_id: usize,
-    task: Box<dyn FnMut()>,
+    task: Task,
 }
-impl PartialEq for Task {
+impl PartialEq for TaskEntry {
     fn eq(&self, other: &Self) -> bool {
         (self.target_tick, self.task_id).eq(&(other.target_tick, other.task_id))
     }
 }
-impl Eq for Task {}
-impl PartialOrd for Task {
+impl Eq for TaskEntry {}
+impl PartialOrd for TaskEntry {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
-impl Ord for Task {
+impl Ord for TaskEntry {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
         (self.target_tick, self.task_id).cmp(&(other.target_tick, other.task_id))
     }
 }
 
 pub(crate) struct Timer {
-    queue: BinaryHeap<Reverse<Task>>,
+    queue: BinaryHeap<Reverse<TaskEntry>>,
     next_task_id: usize,
     tick: u64,
 }
@@ -158,25 +169,56 @@ impl Timer {
 
     pub fn tick(&mut self) {
         self.tick += 1;
-        while let Some(Reverse(task)) = self.queue.peek() {
-            if task.target_tick > self.tick {
+        while let Some(Reverse(entry)) = self.queue.peek() {
+            if entry.target_tick > self.tick {
                 break;
             }
-            let Reverse(mut task) = self.queue.pop().unwrap();
-            (task.task)();
+            let Reverse(mut entry) = self.queue.pop().unwrap();
+            match entry.task {
+                Task::Oneshot { mut callback } => callback(),
+                Task::Periodic {
+                    interval_ticks,
+                    ref mut callback,
+                } => {
+                    callback();
+                    entry.target_tick += interval_ticks;
+                    self.queue.push(Reverse(entry));
+                }
+            }
         }
     }
 
-    pub fn register<F: 'static + FnOnce()>(&mut self, delay: u64, f: F) {
+    pub fn register<F: 'static + FnOnce()>(&mut self, delay_millis: u64, f: F) {
         let mut opt = Some(f);
-        self.queue.push(Reverse(Task {
-            target_tick: self.tick + delay,
+        self.queue.push(Reverse(TaskEntry {
+            target_tick: self.tick + delay_millis / MILLISEC_PER_TICK,
             task_id: self.next_task_id,
-            task: Box::new(move || {
-                if let Some(f) = opt.take() {
+            task: Task::Oneshot {
+                callback: Box::new(move || {
+                    if let Some(f) = opt.take() {
+                        f();
+                    }
+                }),
+            },
+        }));
+        self.next_task_id += 1;
+    }
+
+    pub fn schedule<F: 'static + FnMut()>(
+        &mut self,
+        initial_delay_millis: u64,
+        interval_millis: u64,
+        mut f: F,
+    ) {
+        self.queue.push(Reverse(TaskEntry {
+            target_tick: self.tick + initial_delay_millis / MILLISEC_PER_TICK,
+            task_id: self.next_task_id,
+            task: Task::Periodic {
+                interval_ticks: interval_millis / MILLISEC_PER_TICK,
+                callback: Box::new(move || {
                     f();
-                }
-            }),
+                }),
+            },
         }));
         self.next_task_id += 1;
     }
