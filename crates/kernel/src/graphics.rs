@@ -4,7 +4,7 @@ pub mod buffer;
 pub(crate) mod canvas;
 pub(crate) mod layer;
 pub(crate) mod screen;
-pub(crate) mod widgets;
+pub mod widgets;
 
 pub type ICoordinate = i32;
 pub type UCoordinate = u32;

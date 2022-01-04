@@ -20,7 +20,7 @@ pomelo-common = { path = "../common" }
 snafu = { version = "0.6.10", default-features = false }
 mikanos_usb = { git = "https://github.com/gifnksm/sabios.git", rev = "a0729dbdaafbbc318c6bc13636a3a17a842c782b" }
 log = "0.4.14"
-x86_64 = "0.14.7"
+x86_64 = { version = "0.14.7", features = ["inline_asm"] }
 bitfield = "0.13.2"
 linked_list_allocator = "0.9.1"
 spinning_top = "0.2.4"

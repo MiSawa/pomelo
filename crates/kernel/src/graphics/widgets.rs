@@ -38,6 +38,10 @@ impl<D: Draw> Widget<D> {
         self.layer.lock().transparent_color()
     }
 
+    pub fn draw_ref(&self) -> &D {
+        &self.draw
+    }
+
     pub fn draw_mut(&mut self) -> &mut D {
         &mut self.draw
     }

@@ -126,6 +126,13 @@ impl<D: Draw> MaybeRegistered<D> {
             panic!("Whaaat, maybe it failed to register itself?")
         }
     }
+    pub fn unwrap_ref(&self) -> &D {
+        match self {
+            MaybeRegistered::Unregistered(d) => d,
+            MaybeRegistered::Registered(w) => w.draw_ref(),
+            _ => panic!("Whaaat, maybe it failed to register itself?"),
+        }
+    }
     pub fn unwrap_mut(&mut self) -> &mut D {
         match self {
             MaybeRegistered::Unregistered(d) => d,

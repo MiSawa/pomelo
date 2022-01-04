@@ -1,5 +1,6 @@
 use arrayvec::ArrayString;
 
+use pomelo_common::graphics::GraphicConfig;
 use spinning_top::Spinlock;
 
 use crate::{
@@ -7,7 +8,8 @@ use crate::{
         self,
         canvas::{Canvas, GLYPH_HEIGHT, GLYPH_WIDTH},
         layer::{LayerManager, MaybeRegistered},
-        Color, Draw, ICoordinate, Point, Size, UCoordinate, Vector2d,
+        screen::{self, Screen},
+        Color, Draw, ICoordinate, Point, Rectangle, Size, UCoordinate, Vector2d,
     },
     ring_buffer::ArrayRingBuffer,
 };
@@ -21,10 +23,37 @@ lazy_static! {
         graphics::DESKTOP_BG_COLOR
     ));
 }
+lazy_static! {
+    static ref FALLBACK_CONSOLE: Spinlock<Option<(Console, Screen)>> = Spinlock::new(None);
+}
 
+pub fn initialize(graphic_config: &GraphicConfig) {
+    FALLBACK_CONSOLE.lock().get_or_insert_with(|| {
+        (
+            Console::new(Color::WHITE, Color::BLACK),
+            screen::create_screen(graphic_config),
+        )
+    });
+}
 pub fn register(layer_manager: &mut LayerManager) {
     let mut console = GLOBAL_CONSOLE.lock();
     console.register(layer_manager);
+}
+
+pub fn fallback_console() -> impl core::fmt::Write {
+    struct FallbackConsoleWrite;
+    impl core::fmt::Write for FallbackConsoleWrite {
+        fn write_str(&mut self, s: &str) -> core::fmt::Result {
+            if let Some((console, screen)) = FALLBACK_CONSOLE.lock().as_mut() {
+                console.write_str(s);
+                console.draw(screen);
+                Ok(())
+            } else {
+                Err(core::fmt::Error)
+            }
+        }
+    }
+    FallbackConsoleWrite
 }
 
 pub fn global_console() -> impl core::fmt::Write {
@@ -168,6 +197,33 @@ impl Console {
             } else {
                 break;
             }
+        }
+    }
+}
+
+impl Draw for Console {
+    fn size(&self) -> Size {
+        Size::new(
+            COLUMNS as UCoordinate * GLYPH_WIDTH,
+            ROWS as UCoordinate * GLYPH_HEIGHT,
+        )
+    }
+
+    fn draw<C: Canvas>(&self, canvas: &mut C) {
+        for (i, r) in self.rows.iter().enumerate() {
+            let d = r.unwrap_ref();
+            canvas.fill_rectangle(
+                d.background,
+                Rectangle::new(
+                    Point::new(0, i as ICoordinate * GLYPH_HEIGHT as ICoordinate),
+                    Size::new(COLUMNS as UCoordinate * GLYPH_WIDTH, GLYPH_HEIGHT),
+                ),
+            );
+            canvas.draw_string(
+                d.foreground,
+                Point::new(0, i as ICoordinate * GLYPH_HEIGHT as ICoordinate),
+                &d.text,
+            );
         }
     }
 }

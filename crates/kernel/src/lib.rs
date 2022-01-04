@@ -6,7 +6,7 @@
 #![feature(int_roundings)]
 #![feature(generic_const_exprs)]
 #![feature(ptr_to_from_bits)]
-#![feature(once_cell)]
+#![feature(naked_functions)]
 
 #[macro_use]
 extern crate lazy_static;
@@ -28,6 +28,7 @@ pub mod msi;
 pub mod paging;
 pub mod pci;
 pub(crate) mod ring_buffer;
+pub mod task;
 #[allow(unused)]
 pub mod timer;
 pub mod xhci;

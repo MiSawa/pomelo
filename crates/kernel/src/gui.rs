@@ -1,4 +1,4 @@
-use alloc::rc::Rc;
+use alloc::{rc::Rc, string::ToString};
 use pomelo_common::graphics::GraphicConfig;
 use spinning_top::Spinlock;
 
@@ -29,7 +29,6 @@ pub fn create_gui(graphic_config: &GraphicConfig) -> GUI {
     console::register(&mut layer_manager);
     mouse::initialize(&mut layer_manager);
 
-    use alloc::string::ToString;
     let counter = Framed::new("Counter".to_string(), Counter::new());
     let mut counter = layer_manager.add(counter);
     counter.move_relative(crate::graphics::Vector2d::new(300, 200));
@@ -50,8 +49,35 @@ pub fn create_gui(graphic_config: &GraphicConfig) -> GUI {
         crate::events::fire_redraw_window(text_field.window_id());
     });
 
+    task_b(&mut layer_manager);
+
     GUI::new(layer_manager, screen, timer, counter, text_field)
 }
+
+lazy_static! {
+    static ref TASK_B_FRAME: Spinlock<Option<widgets::Widget<widgets::Framed<Counter>>>> =
+        Spinlock::new(None);
+}
+
+fn task_b(layer_manager: &mut LayerManager) {
+    let frame = Framed::new("Another task".to_string(), Counter::new());
+    let mut frame = layer_manager.add(frame);
+    frame.move_relative(crate::graphics::Vector2d::new(400, 200));
+    TASK_B_FRAME.lock().get_or_insert_with(|| frame);
+    crate::task::spawn_task(task_b_main, 0);
+}
+
+extern "sysv64" fn task_b_main(arg: u64) {
+    crate::println!("Task b spawned with arg {}", arg);
+    let mut locked = TASK_B_FRAME.lock();
+    let frame = locked.as_mut().unwrap();
+    loop {
+        frame.draw_mut().draw_mut().inc();
+        frame.buffer();
+        crate::task::try_switch_context();
+    }
+}
+
 pub struct Counter(usize);
 impl Counter {
     fn new() -> Self {

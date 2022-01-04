@@ -10,6 +10,7 @@ use pomelo_common::BootInfo;
 
 use pomelo_kernel::{
     allocator, events, gdt,
+    graphics::widgets::console,
     gui::{self, GUI},
     interrupts::{self, InterruptIndex},
     logger,
@@ -51,6 +52,7 @@ pub extern "sysv64" fn stack_tricked(boot_info: &BootInfo) {
 }
 
 fn initialize(boot_info: &BootInfo) -> Result<GUI> {
+    console::initialize(boot_info.graphic_config());
     paging::initialize();
     allocator::initialize(boot_info.memory_mapping());
     gdt::initialize();
