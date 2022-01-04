@@ -69,12 +69,14 @@ fn task_b(layer_manager: &mut LayerManager) {
 
 extern "sysv64" fn task_b_main(arg: u64) {
     crate::println!("Task b spawned with arg {}", arg);
+    // crate::println!("Task b interrupt flg: {}", x86_64::instructions::interrupts::are_enabled());
     let mut locked = TASK_B_FRAME.lock();
     let frame = locked.as_mut().unwrap();
     loop {
         frame.draw_mut().draw_mut().inc();
         frame.buffer();
-        crate::task::try_switch_context();
+        crate::events::fire_redraw_window(frame.window_id());
+        x86_64::instructions::interrupts::enable_and_hlt();
     }
 }
 

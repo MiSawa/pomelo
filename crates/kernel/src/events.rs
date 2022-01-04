@@ -134,9 +134,7 @@ pub fn event_loop(mut gui: GUI) -> Result<!> {
                 }
             }
         } else {
-            // interrupts::enable_and_hlt();
-            interrupts::enable();
-            crate::task::try_switch_context();
+            interrupts::enable_and_hlt();
         }
     }
 }

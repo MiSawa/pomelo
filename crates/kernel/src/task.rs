@@ -1,4 +1,4 @@
-use core::arch::asm;
+use core::{arch::asm, sync::atomic::{AtomicU32, Ordering}};
 
 use crate::prelude::*;
 use alloc::{boxed::Box, vec, vec::Vec};
@@ -9,6 +9,16 @@ lazy_static! {
 }
 
 pub type TaskMain = extern "sysv64" fn(u64);
+const PREEMPTION_FREQUENCY: u32 = 50; // 20 ms
+const TICKS_PER_PREEMPTION: u32 = crate::timer::TARGET_FREQUENCY / PREEMPTION_FREQUENCY;
+static TICKS_UNTIL_NEXT_PREEMPTION: AtomicU32 = AtomicU32::new(0);
+
+pub fn tick_and_check_context_switch() -> bool {
+    let ret = TICKS_UNTIL_NEXT_PREEMPTION.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |prev| {
+        Some(prev.saturating_sub(1))
+    }).unwrap();
+    ret == 0
+}
 
 fn with_task_manager<T, F: FnOnce(MappedSpinlockGuard<TaskManager>) -> T>(f: F) -> Result<T> {
     x86_64::instructions::interrupts::without_interrupts(|| {
@@ -29,23 +39,15 @@ pub fn spawn_task(main: TaskMain, arg: u64) {
         manager.add_task(main, arg);
     })
     .unwrap();
-    log::warn!("Spawned a task!");
 }
 
-pub fn try_switch_context() {
+pub fn try_switch_context() -> Result<()> {
     with_task_manager(|mut manager| {
         let (next, current) = manager.start_context_switch();
         drop(manager);
-        // log::warn!("Switching context...");
-        // log::warn!("Current {:?}", unsafe {
-        //     core::ptr::read_volatile(current as *const TaskContext)
-        // });
-        // log::warn!("Next    {:?}", unsafe {
-        //     core::ptr::read_volatile(next as *const TaskContext)
-        // });
+        TICKS_UNTIL_NEXT_PREEMPTION.store(TICKS_PER_PREEMPTION, Ordering::SeqCst);
         switch_context(next, current);
     })
-    .unwrap();
 }
 
 #[repr(C, align(16))]

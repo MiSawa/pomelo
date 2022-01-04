@@ -5,7 +5,7 @@ use alloc::{boxed::Box, collections::binary_heap::BinaryHeap, rc::Rc};
 use crate::{interrupts::InterruptIndex, prelude::*};
 
 /// The target value of LAPIC timer frequency
-const TARGET_FREQUENCY: u32 = 100; // once per 10 ms
+pub const TARGET_FREQUENCY: u32 = 100; // once per 10 ms
 const MILLISEC_PER_TICK: u64 = 1000 / TARGET_FREQUENCY as u64;
 
 /// How much duration we will use to adjust the LAPIC timer frequency
