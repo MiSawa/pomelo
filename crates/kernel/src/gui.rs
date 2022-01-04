@@ -6,7 +6,7 @@ use crate::{
     graphics::{
         buffer::BufferCanvas,
         canvas::Canvas,
-        layer::{self, LayerManager, WindowID},
+        window_manager::{self, WindowManager, WindowId},
         screen::{self, Screen},
         widgets::{self, console, text_window::TextWindow, Framed},
         Color, Draw, Point, Rectangle, Size, UCoordinate, Vector2d,
@@ -17,25 +17,25 @@ use crate::{
 };
 
 pub fn create_gui(graphic_config: &GraphicConfig) -> GUI {
-    let mut layer_manager = layer::create_layer_manager(graphic_config);
+    let mut window_manager = window_manager::create_window_manager(graphic_config);
     let screen = screen::create_screen(graphic_config);
     let size = Size::new(
         graphic_config.horisontal_resolution as UCoordinate,
         graphic_config.vertical_resolution as UCoordinate,
     );
-    layer_manager
+    window_manager
         .add(widgets::Desktop::new(size))
         .set_draggable(false);
-    console::register(&mut layer_manager);
-    mouse::initialize(&mut layer_manager);
+    console::register(&mut window_manager);
+    mouse::initialize(&mut window_manager);
 
     let counter = Framed::new("Counter".to_string(), Counter::new());
-    let mut counter = layer_manager.add(counter);
+    let mut counter = window_manager.add(counter);
     counter.move_relative(crate::graphics::Vector2d::new(300, 200));
 
     let text_field = TextWindow::new(Color::BLACK, Color::WHITE, 30);
     let text_field = Framed::new("Text box".to_string(), text_field);
-    let mut text_field = layer_manager.add(text_field);
+    let mut text_field = window_manager.add(text_field);
     text_field.move_relative(crate::graphics::Vector2d::new(300, 300));
     let text_field = Rc::new(Spinlock::new(text_field));
     let cloned = text_field.clone();
@@ -49,9 +49,9 @@ pub fn create_gui(graphic_config: &GraphicConfig) -> GUI {
         crate::events::fire_redraw_window(text_field.window_id());
     });
 
-    task_b(&mut layer_manager);
+    task_b(&mut window_manager);
 
-    GUI::new(layer_manager, screen, timer, counter, text_field)
+    GUI::new(window_manager, screen, timer, counter, text_field)
 }
 
 lazy_static! {
@@ -59,9 +59,9 @@ lazy_static! {
         Spinlock::new(None);
 }
 
-fn task_b(layer_manager: &mut LayerManager) {
+fn task_b(window_manager: &mut WindowManager) {
     let frame = Framed::new("Another task".to_string(), Counter::new());
-    let mut frame = layer_manager.add(frame);
+    let mut frame = window_manager.add(frame);
     frame.move_relative(crate::graphics::Vector2d::new(400, 200));
     TASK_B_FRAME.lock().get_or_insert_with(|| frame);
     crate::task::spawn_task(task_b_main, 0);
@@ -104,7 +104,7 @@ impl Draw for Counter {
 }
 
 pub struct GUI {
-    layer_manager: LayerManager,
+    window_manager: WindowManager,
     screen: Screen,
     buffer: BufferCanvas<alloc::vec::Vec<u8>>,
     timer: Timer,
@@ -114,7 +114,7 @@ pub struct GUI {
 
 impl GUI {
     fn new(
-        layer_manager: LayerManager,
+        window_manager: WindowManager,
         screen: Screen,
         timer: Timer,
         counter: widgets::Widget<widgets::Framed<Counter>>,
@@ -122,7 +122,7 @@ impl GUI {
     ) -> Self {
         let buffer = BufferCanvas::vec_backed(screen.pixel_format(), screen.size());
         Self {
-            layer_manager,
+            window_manager,
             screen,
             buffer,
             timer,
@@ -132,19 +132,19 @@ impl GUI {
     }
 
     pub fn render(&mut self) {
-        self.layer_manager.draw(&mut self.buffer);
+        self.window_manager.draw(&mut self.buffer);
         self.screen.draw_buffer(Vector2d::zero(), &self.buffer);
     }
 
-    pub fn render_window(&mut self, id: WindowID) {
-        if let Some(area) = self.layer_manager.draw_window(&mut self.buffer, id) {
+    pub fn render_window(&mut self, id: WindowId) {
+        if let Some(area) = self.window_manager.draw_window(&mut self.buffer, id) {
             self.screen
                 .draw_buffer_area(Vector2d::zero(), &self.buffer, area);
         }
     }
 
     pub fn render_area(&mut self, area: Rectangle) {
-        self.layer_manager.draw_area(&mut self.buffer, area);
+        self.window_manager.draw_area(&mut self.buffer, area);
         self.screen
             .draw_buffer_area(Vector2d::zero(), &self.buffer, area);
     }
@@ -157,7 +157,7 @@ impl GUI {
     }
 
     pub fn drag(&mut self, start: Point, end: Point) {
-        self.layer_manager.drag(start, end);
+        self.window_manager.drag(start, end);
     }
 
     pub fn key_press(&mut self, key_code: KeyCode) {

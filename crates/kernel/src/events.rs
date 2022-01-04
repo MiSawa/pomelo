@@ -4,7 +4,7 @@ use spinning_top::Spinlock;
 use x86_64::instructions::interrupts;
 
 use crate::{
-    graphics::{layer::WindowID, Rectangle},
+    graphics::{window_manager::WindowId, Rectangle},
     gui::GUI,
     keyboard::{self, KeyCode},
     prelude::*,
@@ -23,7 +23,7 @@ pub enum Event {
     Drag { start: Point, end: Point },
     KeyPress(KeyCode),
     Redraw,
-    RedrawWindow(WindowID),
+    RedrawWindow(WindowId),
     RedrawArea(Rectangle),
 }
 
@@ -64,7 +64,7 @@ pub fn fire_redraw() {
         q.redraw_events.push_back(Event::Redraw);
     });
 }
-pub fn fire_redraw_window(id: WindowID) {
+pub fn fire_redraw_window(id: WindowId) {
     with_queue_locked(|mut q| {
         if q.redraw_events.len() > MAX_CHUNKED_REDRAW_COUNT {
             q.redraw_events.clear();

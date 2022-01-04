@@ -1,6 +1,6 @@
 use super::{
     canvas::Canvas,
-    layer::{SharedWindow, WindowID},
+    window_manager::{WindowId},
     Color, Draw, ICoordinate, Point, Rectangle, Size, Vector2d, DESKTOP_BG_COLOR,
 };
 
@@ -21,7 +21,7 @@ impl<D: Draw> Widget<D> {
         self.layer.lock().set_draggable(draggable);
     }
 
-    pub fn window_id(&self) -> WindowID {
+    pub fn window_id(&self) -> WindowId {
         self.layer.window_id()
     }
 

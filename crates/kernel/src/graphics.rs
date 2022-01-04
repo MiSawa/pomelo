@@ -2,9 +2,10 @@ use self::canvas::Canvas;
 
 pub mod buffer;
 pub(crate) mod canvas;
-pub(crate) mod layer;
 pub(crate) mod screen;
 pub mod widgets;
+pub(crate) mod window_manager;
+pub(crate) mod windows;
 
 pub type ICoordinate = i32;
 pub type UCoordinate = u32;
@@ -23,6 +24,13 @@ impl Point {
     }
     pub const fn new(x: ICoordinate, y: ICoordinate) -> Self {
         Self { x, y }
+    }
+    #[must_use]
+    pub const fn clamped(&self, r: Rectangle) -> Point {
+        let p = *self;
+        p.x = p.x.clamp(r.min_x(), r.max_x());
+        p.y = p.y.clamp(r.min_x(), r.max_x());
+        p
     }
 }
 

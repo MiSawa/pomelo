@@ -7,7 +7,7 @@ use crate::{
     graphics::{
         self,
         canvas::{Canvas, GLYPH_HEIGHT, GLYPH_WIDTH},
-        layer::{LayerManager, MaybeRegistered},
+        window_manager::{WindowManager, MaybeRegistered},
         screen::{self, Screen},
         Color, Draw, ICoordinate, Point, Rectangle, Size, UCoordinate, Vector2d,
     },
@@ -35,7 +35,7 @@ pub fn initialize(graphic_config: &GraphicConfig) {
         )
     });
 }
-pub fn register(layer_manager: &mut LayerManager) {
+pub fn register(layer_manager: &mut WindowManager) {
     let mut console = GLOBAL_CONSOLE.lock();
     console.register(layer_manager);
 }
@@ -135,7 +135,7 @@ impl Console {
         }
     }
 
-    fn register(&mut self, layer_manager: &mut LayerManager) {
+    fn register(&mut self, layer_manager: &mut WindowManager) {
         for (i, row) in self.rows.iter_mut().enumerate() {
             let widget = row.register_once(layer_manager);
             widget.move_relative(Vector2d::new(

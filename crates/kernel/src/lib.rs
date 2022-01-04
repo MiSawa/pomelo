@@ -31,6 +31,7 @@ pub(crate) mod ring_buffer;
 pub mod task;
 #[allow(unused)]
 pub mod timer;
+pub mod triple_buffer;
 pub mod xhci;
 
 #[macro_export]
