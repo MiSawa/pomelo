@@ -1,6 +1,5 @@
 use crate::graphics::{
-    buffer::VecBufferCanvas, canvas::Canvas, Color, ICoordinate, Point, Rectangle, Size,
-    Vector2d,
+    buffer::VecBufferCanvas, canvas::Canvas, Color, ICoordinate, Point, Rectangle, Size, Vector2d,
 };
 
 pub mod console;

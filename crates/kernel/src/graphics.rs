@@ -22,7 +22,7 @@ impl Point {
     }
     #[must_use]
     pub fn clamped(&self, r: Rectangle) -> Point {
-        let mut p = self.clone();
+        let mut p = *self;
         p.x = p.x.clamp(r.min_x(), r.max_x());
         p.y = p.y.clamp(r.min_x(), r.max_x());
         p

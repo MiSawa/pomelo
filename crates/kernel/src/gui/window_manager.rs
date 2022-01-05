@@ -9,8 +9,7 @@ use spinning_top::{Spinlock, SpinlockGuard};
 use super::{widgets::Widget, windows::Window};
 use crate::{
     graphics::{
-        buffer::VecBufferCanvas, canvas::Canvas, Point, Rectangle, Size,
-        UCoordinate, Vector2d,
+        buffer::VecBufferCanvas, canvas::Canvas, Point, Rectangle, Size, UCoordinate, Vector2d,
     },
     triple_buffer::{Consumer, TripleBuffer},
 };
@@ -53,7 +52,7 @@ impl WindowStateShared {
             inner: Arc::new(Spinlock::new(WindowState {
                 id: WindowId::generate(),
                 position: Point::zero(),
-                draggable: false,
+                draggable: true,
                 screen_size,
             })),
         }
@@ -139,25 +138,29 @@ pub struct WindowBuilder<W: Widget> {
 }
 
 impl<W: Widget> WindowBuilder<W> {
+    #[must_use]
     pub fn new(widget: W) -> Self {
         Self {
             widget,
             position: Point::zero(),
-            draggable: false,
+            draggable: true,
             top: false,
         }
     }
 
+    #[must_use]
     pub fn set_position(mut self, position: Point) -> Self {
         self.position = position;
         self
     }
 
+    #[must_use]
     pub fn set_draggable(mut self, draggable: bool) -> Self {
         self.draggable = draggable;
         self
     }
 
+    #[must_use]
     pub fn set_top(mut self, top: bool) -> Self {
         self.top = top;
         self

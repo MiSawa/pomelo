@@ -23,7 +23,8 @@ pub fn initialize(window_manager: &mut WindowManager) {
         let window = window_manager.add_builder(
             WindowBuilder::new(cursor)
                 .set_draggable(false)
-                .set_position(Point::new(200, 200)),
+                .set_position(Point::new(200, 200))
+                .set_top(true),
         );
         MouseCursor {
             window,

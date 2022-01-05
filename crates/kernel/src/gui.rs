@@ -96,6 +96,7 @@ extern "sysv64" fn task_b_main(arg: u64) {
     }
 }
 
+const TRANSPARENT_COLOR: Color = Color::new(1, 2, 3);
 pub struct Counter(usize);
 impl Counter {
     fn new() -> Self {
@@ -107,10 +108,16 @@ impl Counter {
 }
 impl Widget for Counter {
     fn render(&self, canvas: &mut VecBufferCanvas) {
-        canvas.resize(Size::new(
+        let size = Size::new(
             crate::graphics::canvas::GLYPH_WIDTH * 20,
             crate::graphics::canvas::GLYPH_HEIGHT,
-        ));
+        );
+        canvas.resize(size);
+        canvas.set_transparent_color(Some(TRANSPARENT_COLOR));
+        canvas.fill_rectangle(TRANSPARENT_COLOR, Rectangle::new(Point::zero(), size));
+        canvas
+            .draw_fmt(Color::BLACK, Point::zero(), format_args!("{:010}", self.0))
+            .ok();
         canvas
             .draw_fmt(Color::BLACK, Point::zero(), format_args!("{:010}", self.0))
             .ok();
