@@ -23,6 +23,7 @@ pub mod interrupts;
 pub(crate) mod keyboard;
 pub mod logger;
 pub(crate) mod memory_manager;
+pub mod mpsc;
 pub mod msi;
 pub mod paging;
 pub mod pci;
