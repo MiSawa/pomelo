@@ -44,13 +44,13 @@ pub fn create_gui(graphic_config: &GraphicConfig) -> GUI {
     mouse::initialize(&mut window_manager);
 
     let counter = Framed::new("Counter".to_string(), Counter::new());
-    let mut counter = window_manager.add(counter);
-    counter.move_relative(crate::graphics::Vector2d::new(300, 200));
+    let counter =
+        window_manager.add_builder(WindowBuilder::new(counter).set_position(Point::new(300, 200)));
 
     let text_field = TextWindow::new(Color::BLACK, Color::WHITE, 30);
     let text_field = Framed::new("Text box".to_string(), text_field);
-    let mut text_field = window_manager.add(text_field);
-    text_field.move_relative(crate::graphics::Vector2d::new(300, 300));
+    let text_field = window_manager
+        .add_builder(WindowBuilder::new(text_field).set_position(Point::new(300, 300)));
     let text_field = Rc::new(Spinlock::new(text_field));
     let cloned = text_field.clone();
 

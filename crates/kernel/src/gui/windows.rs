@@ -3,9 +3,21 @@ use super::{
     window_manager::{WindowId, WindowStateShared},
 };
 use crate::{
-    graphics::{buffer::VecBufferCanvas, Point, Vector2d},
+    graphics::{buffer::VecBufferCanvas, Point, Rectangle, Size, Vector2d},
     triple_buffer::Producer,
 };
+
+pub struct MoveNeedRedraw {
+    pub(crate) start_pos: Point,
+    pub(crate) end_pos: Point,
+}
+impl MoveNeedRedraw {
+    pub fn redraw_with_size(self, size: Size) {
+        let start_rectangle = Rectangle::new(self.start_pos, size);
+        let end_rectangle = Rectangle::new(self.end_pos, size);
+        crate::events::fire_redraw_area(start_rectangle.union(&end_rectangle));
+    }
+}
 
 pub struct Window<W: Widget> {
     id: WindowId,
@@ -46,9 +58,8 @@ impl<W: Widget> Window<W> {
         &mut self.widget
     }
 
-    pub fn move_relative(&mut self, v: Vector2d) -> (Point, Point) {
-        let ret = self.state.move_relative(v);
-        crate::events::fire_redraw();
-        ret
+    #[must_use]
+    pub fn move_relative(&mut self, v: Vector2d) -> MoveNeedRedraw {
+        self.state.move_relative(v)
     }
 }

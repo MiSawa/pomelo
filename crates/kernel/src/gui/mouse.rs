@@ -57,10 +57,11 @@ struct MouseCursor {
 
 impl MouseCursor {
     fn handle_event(&mut self, buttons: MouseButtons, v: Vector2d) {
-        let (start, end) = self.window.move_relative(v);
+        let move_result = self.window.move_relative(v);
         if self.buttons.contains(MouseButtons::LEFT) && buttons.contains(MouseButtons::LEFT) {
-            crate::events::fire_drag(start, end);
+            crate::events::fire_drag(move_result.start_pos, move_result.end_pos);
         }
+        move_result.redraw_with_size(Size::new(WIDTH as UCoordinate, HEIGHT as UCoordinate));
         self.buttons = buttons;
     }
 }

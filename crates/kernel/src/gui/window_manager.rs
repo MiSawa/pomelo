@@ -6,7 +6,10 @@ use alloc::{sync::Arc, vec, vec::Vec};
 use pomelo_common::graphics::{GraphicConfig, PixelFormat};
 use spinning_top::{Spinlock, SpinlockGuard};
 
-use super::{widgets::Widget, windows::Window};
+use super::{
+    widgets::Widget,
+    windows::{MoveNeedRedraw, Window},
+};
 use crate::{
     graphics::{
         buffer::VecBufferCanvas, canvas::Canvas, Point, Rectangle, Size, UCoordinate, Vector2d,
@@ -63,12 +66,16 @@ impl WindowStateShared {
     fn position(&self) -> Point {
         self.locked().position
     }
-    pub fn move_relative(&mut self, v: Vector2d) -> (Point, Point) {
+    #[must_use]
+    pub fn move_relative(&mut self, v: Vector2d) -> MoveNeedRedraw {
         let mut locked = self.locked();
         let old_position = locked.position;
         locked.position =
             (locked.position + v).clamped(Rectangle::new(Point::zero(), locked.screen_size));
-        (old_position, locked.position)
+        MoveNeedRedraw {
+            start_pos: old_position,
+            end_pos: locked.position,
+        }
     }
 }
 
