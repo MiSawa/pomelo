@@ -17,6 +17,9 @@ impl MoveNeedRedraw {
         let end_rectangle = Rectangle::new(self.end_pos, size);
         crate::events::fire_redraw_area(start_rectangle.union(&end_rectangle));
     }
+    pub fn redraw_all(self) {
+        crate::events::fire_redraw();
+    }
 }
 
 pub struct Window<W: Widget> {

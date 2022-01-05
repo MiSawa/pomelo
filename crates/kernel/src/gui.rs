@@ -69,7 +69,7 @@ pub fn create_gui(graphic_config: &GraphicConfig) -> GUI {
     task_b(&mut window_manager);
 
     crate::task::spawn_task(TaskBuilder::new(idle_task_main).set_arg(1));
-    // crate::task::spawn_task(TaskBuilder::new(idle_task_main).set_arg(2));
+    crate::task::spawn_task(TaskBuilder::new(idle_task_main).set_arg(2));
 
     GUI::new(window_manager, screen, timer, counter, text_field)
 }
@@ -82,14 +82,15 @@ lazy_static! {
 extern "sysv64" fn idle_task_main(arg: u64) {
     log::warn!("Idle task {}", arg);
     loop {
+        crate::task::current_task().set_awake(false);
         x86_64::instructions::hlt();
     }
 }
 
 fn task_b(window_manager: &mut WindowManager) {
     let frame = Framed::new("Another task".to_string(), Counter::new());
-    let mut frame = window_manager.add(frame);
-    frame.move_relative(crate::graphics::Vector2d::new(400, 200));
+    let frame =
+        window_manager.add_builder(WindowBuilder::new(frame).set_position(Point::new(400, 200)));
     TASK_B_FRAME.lock().get_or_insert_with(|| frame);
     crate::task::spawn_task(TaskBuilder::new(task_b_main).set_arg(0));
 }

@@ -46,7 +46,7 @@ extern "x86-interrupt" fn interrupt_handler_xhci(_stack_frame: InterruptStackFra
 }
 
 extern "x86-interrupt" fn interrupt_handler_lapic_timer(_stack_frame: InterruptStackFrame) {
-    log::trace!("Handling LAPIC timer interruption");
+    // log::warn!("Handling LAPIC timer interruption");
     let need_context_switch = crate::task::tick_and_check_context_switch();
     crate::events::fire_lapic_timer();
     end_of_interrupt();

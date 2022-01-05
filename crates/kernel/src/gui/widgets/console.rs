@@ -172,7 +172,7 @@ impl Console {
             row.clear();
             // Shift the top row down
             if let Some(w) = prev.get_window() {
-                w.move_relative(Vector2d::new(
+                let _ = w.move_relative(Vector2d::new(
                     0,
                     GLYPH_HEIGHT as ICoordinate * (ROWS - 1) as ICoordinate,
                 ));
@@ -180,7 +180,7 @@ impl Console {
             // Shift other rows up
             for row in self.rows.iter_mut() {
                 if let Some(w) = row.get_window() {
-                    w.move_relative(Vector2d::new(0, -(GLYPH_HEIGHT as ICoordinate)));
+                    let _ = w.move_relative(Vector2d::new(0, -(GLYPH_HEIGHT as ICoordinate)));
                 }
             }
             // Put the row as the bottom row

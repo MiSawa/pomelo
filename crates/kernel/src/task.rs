@@ -1,10 +1,16 @@
 use core::{
     arch::asm,
-    sync::atomic::{AtomicU32, Ordering},
+    sync::atomic::{AtomicBool, AtomicU32, AtomicU8, AtomicUsize, Ordering},
 };
 
 use crate::prelude::*;
-use alloc::{boxed::Box, vec, vec::Vec};
+use alloc::{
+    boxed::Box,
+    collections::{BTreeMap, VecDeque},
+    sync::Arc,
+    vec,
+    vec::Vec,
+};
 use spinning_top::{MappedSpinlockGuard, Spinlock, SpinlockGuard};
 
 lazy_static! {
@@ -12,9 +18,15 @@ lazy_static! {
 }
 
 pub type TaskMain = extern "sysv64" fn(u64);
+pub type TaskPriority = u8;
+type AtomicTaskPriority = AtomicU8;
+type Generation = usize;
+type AtomicGeneration = AtomicUsize;
+
 const PREEMPTION_FREQUENCY: u32 = 50; // 20 ms
 const TICKS_PER_PREEMPTION: u32 = crate::timer::TARGET_FREQUENCY / PREEMPTION_FREQUENCY;
 static TICKS_UNTIL_NEXT_PREEMPTION: AtomicU32 = AtomicU32::new(0);
+static TASK_CONFIG_GENERATION: AtomicGeneration = AtomicGeneration::new(0);
 
 pub fn tick_and_check_context_switch() -> bool {
     let ret = TICKS_UNTIL_NEXT_PREEMPTION
@@ -39,22 +51,93 @@ fn with_task_manager<T, F: FnOnce(MappedSpinlockGuard<TaskManager>) -> T>(f: F) 
     })
 }
 
-pub fn spawn_task(task_builder: TaskBuilder) {
-    with_task_manager(|mut manager| {
-        manager.add_task(task_builder);
-    })
-    .unwrap();
+pub fn spawn_task(task_builder: TaskBuilder) -> TaskHandle {
+    with_task_manager(|mut manager| manager.add_task(task_builder)).unwrap()
 }
 
 pub fn try_switch_context() -> Result<()> {
-    with_task_manager(|mut manager| {
-        let (next, current) = manager.start_context_switch();
-        drop(manager);
-        TICKS_UNTIL_NEXT_PREEMPTION.store(TICKS_PER_PREEMPTION, Ordering::SeqCst);
-        switch_context(next, current);
-    })
+    loop {
+        let need_retry = with_task_manager(|mut manager| match manager.start_context_switch() {
+            Ok(s) => {
+                // log::warn!("Switching context: {:?}", s);
+                s.switch(manager);
+                false
+            }
+            Err(ContextSwitchError::NothingToRun) => {
+                log::warn!("Nothing to run???");
+                drop(manager);
+                x86_64::instructions::interrupts::enable_and_hlt();
+                true
+            }
+        })?;
+        if !need_retry {
+            break Ok(());
+        }
+    }
 }
 
+pub fn current_task() -> TaskHandle {
+    with_task_manager(|m| m.current_handle()).unwrap()
+}
+
+fn bump_generation() {
+    TASK_CONFIG_GENERATION.fetch_add(1, Ordering::SeqCst);
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+struct TaskId(usize);
+impl TaskId {
+    fn new() -> Self {
+        static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
+        Self(NEXT_ID.fetch_add(1, Ordering::SeqCst))
+    }
+}
+
+struct TaskHandleImpl {
+    id: TaskId,
+    priority: AtomicTaskPriority,
+    awake: AtomicBool,
+}
+#[derive(Clone)]
+pub struct TaskHandle {
+    inner: Arc<TaskHandleImpl>,
+}
+impl TaskHandle {
+    fn initialize(id: TaskId, priority: TaskPriority, awake: bool) -> Self {
+        let inner = TaskHandleImpl {
+            id,
+            priority: AtomicTaskPriority::new(priority),
+            awake: AtomicBool::new(awake),
+        };
+        Self {
+            inner: Arc::new(inner),
+        }
+    }
+
+    fn id(&self) -> TaskId {
+        self.inner.id
+    }
+
+    pub fn priority(&self) -> TaskPriority {
+        self.inner.priority.load(Ordering::SeqCst)
+    }
+
+    pub fn awake(&self) -> bool {
+        self.inner.awake.load(Ordering::SeqCst)
+    }
+
+    pub fn set_priority(&mut self, priority: TaskPriority) {
+        self.inner.priority.store(priority, Ordering::SeqCst);
+        bump_generation();
+    }
+
+    pub fn set_awake(&mut self, awake: bool) {
+        self.inner.awake.store(awake, Ordering::SeqCst);
+        bump_generation();
+    }
+}
+
+type TaskContextPtr = u64;
 #[repr(C, align(16))]
 #[derive(Debug)]
 struct TaskContext {
@@ -109,7 +192,7 @@ struct TaskStack {
 impl TaskStack {
     fn new(size: usize) -> Self {
         Self {
-            stack: vec![Align16::default(); size.next_multiple_of(16)],
+            stack: vec![Align16::default(); size.div_ceil(16)],
         }
     }
     fn bottom_address(&self) -> u64 {
@@ -121,6 +204,7 @@ pub struct TaskBuilder {
     task_main: TaskMain,
     arg: u64,
     stack_size: usize,
+    priority: TaskPriority,
 }
 
 impl TaskBuilder {
@@ -129,7 +213,8 @@ impl TaskBuilder {
         Self {
             task_main,
             arg: 0,
-            stack_size: 2048,
+            stack_size: 128 * 1024, // 128 KiB
+            priority: 1,
         }
     }
 
@@ -148,15 +233,13 @@ impl TaskBuilder {
 
 pub struct Task {
     context: Box<TaskContext>,
-    stack: TaskStack,
+    handle: TaskHandle,
+    _stack: TaskStack,
 }
 
 impl Task {
     fn empty() -> Self {
-        Self {
-            context: Box::new(TaskContext::default()),
-            stack: TaskStack::new(0),
-        }
+        Self::from_builder(TaskBuilder::new(_whatever).set_stack_size(0))
     }
 
     fn from_builder(task_builder: TaskBuilder) -> Self {
@@ -179,41 +262,123 @@ impl Task {
         assert!(context.rsp & 0xf == 8);
         // Clear MXCSR interrupthions
         context.fxsave_area[24..28].copy_from_slice(&0x1f80u32.to_le_bytes());
-        Self { context, stack }
-    }
-
-    pub fn context_ptr(&self) -> u64 {
-        &*self.context as *const TaskContext as u64
-        // (MAIN_CONTEXT.as_ptr() as u64).next_multiple_of(32)
-    }
-}
-
-struct TaskManager {
-    tasks: Vec<Task>,
-    current_task: usize,
-}
-impl TaskManager {
-    fn create() -> Self {
         Self {
-            tasks: vec![Task::empty()],
-            current_task: 0,
+            context,
+            handle: TaskHandle::initialize(TaskId::new(), task_builder.priority, true),
+            _stack: stack,
         }
     }
 
-    fn add_task(&mut self, task_builder: TaskBuilder) {
-        self.tasks.push(Task::from_builder(task_builder));
+    fn id(&self) -> TaskId {
+        self.handle.id()
     }
 
-    fn start_context_switch(&mut self) -> (u64, u64) {
-        let current = self.tasks[self.current_task].context_ptr();
-        self.current_task = (self.current_task + 1) % self.tasks.len();
-        let next = self.tasks[self.current_task].context_ptr();
-        (next, current)
+    fn context_ptr(&self) -> TaskContextPtr {
+        &*self.context as *const TaskContext as TaskContextPtr
     }
 }
 
+#[derive(Debug)]
+struct ContextSwitchPartial {
+    current: TaskContextPtr,
+    next: TaskContextPtr,
+}
+#[derive(Debug)]
+enum ContextSwitchError {
+    NothingToRun,
+    // NotNeeded,
+}
+impl ContextSwitchPartial {
+    fn switch(self, guard: MappedSpinlockGuard<TaskManager>) {
+        drop(guard);
+        TICKS_UNTIL_NEXT_PREEMPTION.store(TICKS_PER_PREEMPTION, Ordering::SeqCst);
+        switch_context(self.next, self.current);
+    }
+}
+
+type TaskQueueEntry = (TaskHandle, TaskContextPtr);
+struct TaskManager {
+    tasks: BTreeMap<TaskId, Task>,
+    task_queue: VecDeque<TaskQueueEntry>,
+    current_generation: Generation,
+    current_task: TaskQueueEntry,
+}
+impl TaskManager {
+    fn create() -> Self {
+        let main_task = Task::empty();
+        let mut tasks = BTreeMap::new();
+        let handle = main_task.handle.clone();
+        let ptr = main_task.context_ptr();
+        tasks.insert(handle.id(), main_task);
+        let old_generation = TASK_CONFIG_GENERATION.fetch_add(1, Ordering::SeqCst);
+        Self {
+            tasks,
+            task_queue: VecDeque::new(),
+            current_generation: old_generation,
+            current_task: (handle, ptr),
+        }
+    }
+
+    fn add_task(&mut self, task_builder: TaskBuilder) -> TaskHandle {
+        let task = Task::from_builder(task_builder);
+        let handle = task.handle.clone();
+        assert!(
+            self.tasks.insert(task.id(), task).is_none(),
+            "Conflict task id???? What????"
+        );
+        handle
+    }
+
+    fn refresh_task_queue_if_necessary(&mut self) {
+        let global_generation = TASK_CONFIG_GENERATION.load(Ordering::SeqCst);
+        if global_generation <= self.current_generation {
+            return;
+        }
+        self.task_queue.clear();
+        let mut current_priority = 0;
+        for task in self.tasks.values() {
+            if !task.handle.awake() {
+                continue;
+            }
+            match task.handle.priority().cmp(&current_priority) {
+                core::cmp::Ordering::Less => continue,
+                core::cmp::Ordering::Equal => self
+                    .task_queue
+                    .push_back((task.handle.clone(), task.context_ptr())),
+                core::cmp::Ordering::Greater => {
+                    current_priority = task.handle.priority();
+                    self.task_queue.clear();
+                    self.task_queue
+                        .push_back((task.handle.clone(), task.context_ptr()));
+                }
+            }
+        }
+        self.current_generation = global_generation;
+    }
+
+    fn start_context_switch(
+        &mut self,
+    ) -> core::result::Result<ContextSwitchPartial, ContextSwitchError> {
+        self.refresh_task_queue_if_necessary();
+        self.task_queue.rotate_left(1);
+        if let Some((handle, ptr)) = self.task_queue.front().cloned() {
+            let current = self.current_task.1;
+            self.current_task = (handle, ptr);
+            Ok(ContextSwitchPartial { current, next: ptr })
+        } else {
+            Err(ContextSwitchError::NothingToRun)
+        }
+    }
+
+    fn current_handle(&self) -> TaskHandle {
+        self.current_task.0.clone()
+    }
+}
+
+extern "sysv64" fn _whatever(_: u64) {}
+
 #[naked]
-extern "sysv64" fn switch_context(next: u64, current: u64) {
+extern "sysv64" fn switch_context(next: TaskContextPtr, current: TaskContextPtr) {
     unsafe {
         asm! {
             "mov [rsi + 0x40], rax",
@@ -252,13 +417,6 @@ extern "sysv64" fn switch_context(next: u64, current: u64) {
             "mov [rsi + 0x38], rdx",
 
             "fxsave [rsi + 0xc0]",
-
-            // // stack frame for iret
-            // "push qword ptr [rsi + 0x28]", // SS
-            // "push qword ptr [rsi + 0x70]", // RSP
-            // "push qword ptr [rsi + 0x10]", // RFLAGS
-            // "push qword ptr [rsi + 0x20]", // CS
-            // "push qword ptr [rsi + 0x08]", // RIP
 
             // stack frame for iret
             "push qword ptr [rdi + 0x28]", // SS
