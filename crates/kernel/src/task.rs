@@ -39,9 +39,9 @@ fn with_task_manager<T, F: FnOnce(MappedSpinlockGuard<TaskManager>) -> T>(f: F) 
     })
 }
 
-pub fn spawn_task(main: TaskMain, arg: u64) {
+pub fn spawn_task(task_builder: TaskBuilder) {
     with_task_manager(|mut manager| {
-        manager.add_task(main, arg);
+        manager.add_task(task_builder);
     })
     .unwrap();
 }
@@ -98,39 +98,74 @@ impl Default for TaskContext {
 }
 
 #[repr(C, align(16))]
-struct TaskStack {
-    _stack: [u64; 1024],
+#[derive(Clone, Copy, Default)]
+struct Align16 {
+    _data: [u8; 16],
 }
-impl Default for TaskStack {
-    fn default() -> Self {
-        Self { _stack: [0; 1024] }
-    }
+#[repr(C, align(16))]
+struct TaskStack {
+    stack: Vec<Align16>,
 }
 impl TaskStack {
+    fn new(size: usize) -> Self {
+        Self {
+            stack: vec![Align16::default(); size.next_multiple_of(16)],
+        }
+    }
     fn bottom_address(&self) -> u64 {
-        self._stack.as_ptr_range().end as u64
+        self.stack.as_ptr_range().end as u64
+    }
+}
+
+pub struct TaskBuilder {
+    task_main: TaskMain,
+    arg: u64,
+    stack_size: usize,
+}
+
+impl TaskBuilder {
+    #[must_use]
+    pub fn new(task_main: TaskMain) -> Self {
+        Self {
+            task_main,
+            arg: 0,
+            stack_size: 2048,
+        }
+    }
+
+    #[must_use]
+    pub fn set_arg(mut self, arg: u64) -> Self {
+        self.arg = arg;
+        self
+    }
+
+    #[must_use]
+    pub fn set_stack_size(mut self, stack_size: usize) -> Self {
+        self.stack_size = stack_size;
+        self
     }
 }
 
 pub struct Task {
     context: Box<TaskContext>,
-    _stack: Box<TaskStack>,
+    stack: TaskStack,
 }
 
 impl Task {
     fn empty() -> Self {
         Self {
             context: Box::new(TaskContext::default()),
-            _stack: Box::new(TaskStack::default()),
+            stack: TaskStack::new(0),
         }
     }
-    fn new(task_main: TaskMain, arg: u64) -> Self {
-        use x86_64::instructions::segmentation::{Segment, CS, SS};
+
+    fn from_builder(task_builder: TaskBuilder) -> Self {
+        use x86_64::instructions::segmentation::{Segment, CS, FS, GS, SS};
 
         let mut context = Box::new(TaskContext::default());
-        let stack = Box::new(TaskStack::default());
-        context.rip = task_main as *const u8 as u64;
-        context.rdi = arg;
+        let stack = TaskStack::new(task_builder.stack_size);
+        context.rip = task_builder.task_main as *const u8 as u64;
+        context.rdi = task_builder.arg;
         // context.rsi = 0;
         unsafe {
             asm!("mov {}, cr3", out(reg) context.cr3, options(nomem, nostack, preserves_flags))
@@ -138,14 +173,13 @@ impl Task {
         context.rflags = 0x202; // interrupt flag
         context.cs = CS::get_reg().0 as u64; // DescriptorFlags::KERNEL_CODE64.bits();
         context.ss = SS::get_reg().0 as u64; //DescriptorFlags::KERNEL_DATA.bits();
+        context.fs = FS::get_reg().0 as u64; // DescriptorFlags::KERNEL_CODE64.bits();
+        context.gs = GS::get_reg().0 as u64; //DescriptorFlags::KERNEL_DATA.bits();
         context.rsp = stack.bottom_address() - 8;
         assert!(context.rsp & 0xf == 8);
         // Clear MXCSR interrupthions
         context.fxsave_area[24..28].copy_from_slice(&0x1f80u32.to_le_bytes());
-        Self {
-            context,
-            _stack: stack,
-        }
+        Self { context, stack }
     }
 
     pub fn context_ptr(&self) -> u64 {
@@ -166,8 +200,8 @@ impl TaskManager {
         }
     }
 
-    fn add_task(&mut self, task_main: TaskMain, arg: u64) {
-        self.tasks.push(Task::new(task_main, arg));
+    fn add_task(&mut self, task_builder: TaskBuilder) {
+        self.tasks.push(Task::from_builder(task_builder));
     }
 
     fn start_context_switch(&mut self) -> (u64, u64) {
