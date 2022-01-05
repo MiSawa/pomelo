@@ -1,9 +1,12 @@
 use core::{
     arch::asm,
-    sync::atomic::{AtomicBool, AtomicU32, AtomicU8, AtomicUsize, Ordering},
+    sync::atomic::{AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering},
 };
 
-use crate::prelude::*;
+use crate::{
+    mpsc::{MPSCConsumer, MPSCProducer},
+    prelude::*,
+};
 use alloc::{
     boxed::Box,
     collections::{BTreeMap, VecDeque},
@@ -11,22 +14,50 @@ use alloc::{
     vec,
     vec::Vec,
 };
-use spinning_top::{MappedSpinlockGuard, Spinlock, SpinlockGuard};
+use delegate::delegate;
+use spinning_top::{Spinlock, SpinlockGuard};
 
 lazy_static! {
-    static ref TASK_MANAGER: Spinlock<Option<TaskManager>> = Spinlock::new(None);
+    static ref TASK_MANAGER: Spinlock<TaskManager> = Spinlock::new(TaskManager::create());
 }
 
-pub type TaskMain = extern "sysv64" fn(u64);
+pub type TaskMain<T> = extern "sysv64" fn(Box<Receiver<T>>);
 pub type TaskPriority = u8;
 type AtomicTaskPriority = AtomicU8;
-type Generation = usize;
-type AtomicGeneration = AtomicUsize;
+type Generation = u64;
+type AtomicGeneration = AtomicU64;
+type LockedManager<'a> = SpinlockGuard<'a, TaskManager>;
 
 const PREEMPTION_FREQUENCY: u32 = 50; // 20 ms
 const TICKS_PER_PREEMPTION: u32 = crate::timer::TARGET_FREQUENCY / PREEMPTION_FREQUENCY;
 static TICKS_UNTIL_NEXT_PREEMPTION: AtomicU32 = AtomicU32::new(0);
 static TASK_CONFIG_GENERATION: AtomicGeneration = AtomicGeneration::new(0);
+
+pub struct Receiver<T> {
+    handle: TaskHandle,
+    consumer: MPSCConsumer<T>,
+}
+impl<T> Receiver<T> {
+    fn new(handle: TaskHandle) -> Self {
+        Self {
+            handle,
+            consumer: MPSCConsumer::new(),
+        }
+    }
+    fn producer(&self) -> MPSCProducer<T> {
+        self.consumer.producer()
+    }
+    pub fn dequeue_or_wait(&mut self) -> T {
+        let mut gen = self.handle.load_generation();
+        loop {
+            if let Some(v) = self.consumer.dequeue() {
+                return v;
+            }
+            self.handle.try_compare_and_sleep(gen);
+            gen = self.handle.load_generation();
+        }
+    }
+}
 
 pub fn tick_and_check_context_switch() -> bool {
     let ret = TICKS_UNTIL_NEXT_PREEMPTION
@@ -37,12 +68,10 @@ pub fn tick_and_check_context_switch() -> bool {
     ret == 0
 }
 
-fn with_task_manager<T, F: FnOnce(MappedSpinlockGuard<TaskManager>) -> T>(f: F) -> Result<T> {
+fn with_task_manager<T, F: FnOnce(LockedManager) -> T>(f: F) -> Result<T> {
     x86_64::instructions::interrupts::without_interrupts(|| {
         if let Some(locked) = TASK_MANAGER.try_lock() {
-            let manager =
-                SpinlockGuard::map(locked, |opt| opt.get_or_insert_with(TaskManager::create));
-            Ok(f(manager))
+            Ok(f(locked))
         } else {
             Err(Error::Whatever(
                 "Failed to take the lock for task schedular...",
@@ -51,7 +80,7 @@ fn with_task_manager<T, F: FnOnce(MappedSpinlockGuard<TaskManager>) -> T>(f: F) 
     })
 }
 
-pub fn spawn_task(task_builder: TaskBuilder) -> TaskHandle {
+pub fn spawn_task<T>(task_builder: TaskBuilder<T>) -> TypedTaskHandle<T> {
     with_task_manager(|mut manager| manager.add_task(task_builder)).unwrap()
 }
 
@@ -80,7 +109,7 @@ pub fn current_task() -> TaskHandle {
     with_task_manager(|m| m.current_handle()).unwrap()
 }
 
-fn bump_generation() {
+fn bump_global_generation() {
     TASK_CONFIG_GENERATION.fetch_add(1, Ordering::SeqCst);
 }
 
@@ -96,18 +125,22 @@ impl TaskId {
 struct TaskHandleImpl {
     id: TaskId,
     priority: AtomicTaskPriority,
-    awake: AtomicBool,
+    /// generation and waking flag
+    /// Bit 0 corresponds to the waking flag, and
+    /// the other 63 bits correspond to the generation.
+    state: AtomicU64,
 }
 #[derive(Clone)]
 pub struct TaskHandle {
     inner: Arc<TaskHandleImpl>,
 }
 impl TaskHandle {
-    fn initialize(id: TaskId, priority: TaskPriority, awake: bool) -> Self {
+    fn initialize(id: TaskId, priority: TaskPriority, waking: bool) -> Self {
+        let state = if waking { 1 } else { 0 };
         let inner = TaskHandleImpl {
             id,
             priority: AtomicTaskPriority::new(priority),
-            awake: AtomicBool::new(awake),
+            state: AtomicU64::new(state),
         };
         Self {
             inner: Arc::new(inner),
@@ -122,18 +155,94 @@ impl TaskHandle {
         self.inner.priority.load(Ordering::SeqCst)
     }
 
-    pub fn awake(&self) -> bool {
-        self.inner.awake.load(Ordering::SeqCst)
+    pub fn waking(&self) -> bool {
+        self.inner.state.load(Ordering::SeqCst) & 1 == 1
     }
 
-    pub fn set_priority(&mut self, priority: TaskPriority) {
+    pub fn set_priority(&self, priority: TaskPriority) {
         self.inner.priority.store(priority, Ordering::SeqCst);
-        bump_generation();
+        bump_global_generation();
     }
 
-    pub fn set_awake(&mut self, awake: bool) {
-        self.inner.awake.store(awake, Ordering::SeqCst);
-        bump_generation();
+    pub fn set_waking(&self, waking: bool) {
+        if waking {
+            self.awake();
+        } else {
+            self.put_sleep();
+        }
+    }
+
+    pub fn awake(&self) {
+        let need_bump = self
+            .inner
+            .state
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |s| {
+                if s & 1 == 1 {
+                    None
+                } else {
+                    Some((s + 2) | 1)
+                }
+            })
+            .is_ok();
+        if need_bump {
+            bump_global_generation();
+        }
+    }
+
+    pub fn put_sleep(&self) {
+        let need_bump = self
+            .inner
+            .state
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |s| {
+                if s & 1 == 1 {
+                    Some((s + 2) & !1) // actually s + 1 but anyway this is the meaning
+                } else {
+                    None
+                }
+            })
+            .is_ok();
+        if need_bump {
+            bump_global_generation();
+        }
+    }
+
+    fn load_generation(&self) -> u64 {
+        self.inner.state.load(Ordering::SeqCst)
+    }
+
+    fn try_compare_and_sleep(&self, state: u64) -> bool {
+        let success = self
+            .inner
+            .state
+            .compare_exchange(state, (state + 2) & !1, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok();
+        if success {
+            bump_global_generation();
+        }
+        success
+    }
+}
+
+#[derive(Clone)]
+pub struct TypedTaskHandle<T> {
+    inner: TaskHandle,
+    producer: MPSCProducer<T>,
+}
+impl<T> TypedTaskHandle<T> {
+    delegate! {
+        to self.inner {
+            pub fn priority(&self) -> TaskPriority;
+            pub fn waking(&self) -> bool;
+            pub fn set_priority(&self, priority: TaskPriority);
+            pub fn set_waking(&self, waking: bool);
+            pub fn awake(&self);
+            pub fn put_sleep(&self);
+        }
+    }
+
+    pub fn send(&self, value: T) {
+        self.producer.enqueue(value);
+        self.inner.awake();
     }
 }
 
@@ -200,16 +309,16 @@ impl TaskStack {
     }
 }
 
-pub struct TaskBuilder {
-    task_main: TaskMain,
+pub struct TaskBuilder<T> {
+    task_main: TaskMain<T>,
     arg: u64,
     stack_size: usize,
     priority: TaskPriority,
 }
 
-impl TaskBuilder {
+impl<T> TaskBuilder<T> {
     #[must_use]
-    pub fn new(task_main: TaskMain) -> Self {
+    pub fn new(task_main: TaskMain<T>) -> Self {
         Self {
             task_main,
             arg: 0,
@@ -239,16 +348,20 @@ pub struct Task {
 
 impl Task {
     fn empty() -> Self {
-        Self::from_builder(TaskBuilder::new(_whatever).set_stack_size(0))
+        Self::create_with_handle(TaskBuilder::new(_whatever).set_stack_size(0)).0
     }
 
-    fn from_builder(task_builder: TaskBuilder) -> Self {
+    fn create_with_handle<T>(task_builder: TaskBuilder<T>) -> (Self, TypedTaskHandle<T>) {
         use x86_64::instructions::segmentation::{Segment, CS, FS, GS, SS};
+
+        let handle = TaskHandle::initialize(TaskId::new(), task_builder.priority, true);
+        let receiver = Box::new(Receiver::new(handle.clone()));
+        let producer = receiver.producer();
 
         let mut context = Box::new(TaskContext::default());
         let stack = TaskStack::new(task_builder.stack_size);
         context.rip = task_builder.task_main as *const u8 as u64;
-        context.rdi = task_builder.arg;
+        context.rdi = Box::into_raw(receiver) as u64;
         // context.rsi = 0;
         unsafe {
             asm!("mov {}, cr3", out(reg) context.cr3, options(nomem, nostack, preserves_flags))
@@ -262,11 +375,17 @@ impl Task {
         assert!(context.rsp & 0xf == 8);
         // Clear MXCSR interrupthions
         context.fxsave_area[24..28].copy_from_slice(&0x1f80u32.to_le_bytes());
-        Self {
-            context,
-            handle: TaskHandle::initialize(TaskId::new(), task_builder.priority, true),
-            _stack: stack,
-        }
+        (
+            Self {
+                context,
+                handle: handle.clone(),
+                _stack: stack,
+            },
+            TypedTaskHandle {
+                inner: handle,
+                producer,
+            },
+        )
     }
 
     fn id(&self) -> TaskId {
@@ -289,7 +408,7 @@ enum ContextSwitchError {
     // NotNeeded,
 }
 impl ContextSwitchPartial {
-    fn switch(self, guard: MappedSpinlockGuard<TaskManager>) {
+    fn switch(self, guard: LockedManager) {
         drop(guard);
         TICKS_UNTIL_NEXT_PREEMPTION.store(TICKS_PER_PREEMPTION, Ordering::SeqCst);
         switch_context(self.next, self.current);
@@ -319,9 +438,8 @@ impl TaskManager {
         }
     }
 
-    fn add_task(&mut self, task_builder: TaskBuilder) -> TaskHandle {
-        let task = Task::from_builder(task_builder);
-        let handle = task.handle.clone();
+    fn add_task<T>(&mut self, task_builder: TaskBuilder<T>) -> TypedTaskHandle<T> {
+        let (task, handle) = Task::create_with_handle(task_builder);
         assert!(
             self.tasks.insert(task.id(), task).is_none(),
             "Conflict task id???? What????"
@@ -337,7 +455,7 @@ impl TaskManager {
         self.task_queue.clear();
         let mut current_priority = 0;
         for task in self.tasks.values() {
-            if !task.handle.awake() {
+            if !task.handle.waking() {
                 continue;
             }
             match task.handle.priority().cmp(&current_priority) {
@@ -375,7 +493,7 @@ impl TaskManager {
     }
 }
 
-extern "sysv64" fn _whatever(_: u64) {}
+extern "sysv64" fn _whatever(_: Box<Receiver<()>>) {}
 
 #[naked]
 extern "sysv64" fn switch_context(next: TaskContextPtr, current: TaskContextPtr) {

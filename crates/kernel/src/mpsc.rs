@@ -8,14 +8,19 @@ use alloc::{boxed::Box, sync::Arc};
 pub struct MPSCConsumer<T> {
     state: Arc<SharedState<T>>,
 }
+impl<T> Default for MPSCConsumer<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 impl<T> MPSCConsumer<T> {
     pub fn new() -> Self {
         Self {
             state: Arc::new(SharedState::new()),
         }
     }
-    pub fn pop(&mut self) -> Option<T> {
-        self.state.pop()
+    pub fn dequeue(&mut self) -> Option<T> {
+        self.state.dequeue()
     }
     pub fn producer(&self) -> MPSCProducer<T> {
         MPSCProducer {
@@ -29,8 +34,8 @@ pub struct MPSCProducer<T> {
     state: Arc<SharedState<T>>,
 }
 impl<T> MPSCProducer<T> {
-    pub fn push(&self, value: T) {
-        self.state.push(value);
+    pub fn enqueue(&self, value: T) {
+        self.state.enqueue(value);
     }
 }
 
@@ -51,7 +56,7 @@ impl<T> Node<T> {
             value: Some(value),
         }
     }
-    fn to_ptr(self) -> *mut Self {
+    fn into_ptr(self) -> *mut Self {
         Box::into_raw(Box::new(self))
     }
 }
@@ -62,20 +67,20 @@ struct SharedState<T> {
 
 impl<T> SharedState<T> {
     fn new() -> Self {
-        let dummy = Node::dummy().to_ptr();
+        let dummy = Node::dummy().into_ptr();
         Self {
             head: AtomicPtr::new(dummy),
             tail: UnsafeCell::new(dummy),
         }
     }
 
-    fn push(&self, value: T) {
-        let node = Node::new(value).to_ptr();
+    fn enqueue(&self, value: T) {
+        let node = Node::new(value).into_ptr();
         let previous_head = self.head.swap(node, Ordering::AcqRel);
         unsafe { (*previous_head).next.store(node, Ordering::Release) };
     }
 
-    fn pop(&self) -> Option<T> {
+    fn dequeue(&self) -> Option<T> {
         let tail = unsafe { *self.tail.get() };
         let next = unsafe { (*tail).next.load(Ordering::Acquire) };
         if next.is_null() {

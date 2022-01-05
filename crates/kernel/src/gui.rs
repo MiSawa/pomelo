@@ -1,22 +1,16 @@
-use alloc::{rc::Rc, string::ToString};
+use alloc::{boxed::Box, rc::Rc, string::ToString};
 use pomelo_common::graphics::GraphicConfig;
 use spinning_top::Spinlock;
 
-use crate::{
-    graphics::{
+use crate::{graphics::{
         buffer::{BufferCanvas, VecBufferCanvas},
         canvas::Canvas,
         screen::{self, Screen},
         Color, Point, Rectangle, Size, UCoordinate, Vector2d,
-    },
-    gui::{
+    }, gui::{
         widgets::{console, text_window::TextWindow, Framed},
         window_manager::{WindowId, WindowManager},
-    },
-    keyboard::KeyCode,
-    task::TaskBuilder,
-    timer::Timer,
-};
+    }, keyboard::KeyCode, task::{Receiver, TaskBuilder, TypedTaskHandle}, timer::Timer};
 
 use self::{
     widgets::{desktop::Desktop, Widget},
@@ -68,10 +62,10 @@ pub fn create_gui(graphic_config: &GraphicConfig) -> GUI {
 
     task_b(&mut window_manager);
 
-    crate::task::spawn_task(TaskBuilder::new(idle_task_main).set_arg(1));
-    crate::task::spawn_task(TaskBuilder::new(idle_task_main).set_arg(2));
+    crate::task::spawn_task(TaskBuilder::new(idle_task_main)).send(10);
+    let idle = crate::task::spawn_task(TaskBuilder::new(idle_task_main));
 
-    GUI::new(window_manager, screen, timer, counter, text_field)
+    GUI::new(window_manager, screen, timer, counter, text_field, idle)
 }
 
 lazy_static! {
@@ -79,11 +73,11 @@ lazy_static! {
         Spinlock::new(None);
 }
 
-extern "sysv64" fn idle_task_main(arg: u64) {
-    log::warn!("Idle task {}", arg);
+extern "sysv64" fn idle_task_main(mut receiver: Box<Receiver<u64>>) {
+    // log::warn!("Idle task {}", arg);
     loop {
-        crate::task::current_task().set_awake(false);
-        x86_64::instructions::hlt();
+        let value = receiver.dequeue_or_wait();
+        crate::println!("Idle task received {}", value);
     }
 }
 
@@ -95,8 +89,8 @@ fn task_b(window_manager: &mut WindowManager) {
     crate::task::spawn_task(TaskBuilder::new(task_b_main).set_arg(0));
 }
 
-extern "sysv64" fn task_b_main(arg: u64) {
-    crate::println!("Task b spawned with arg {}", arg);
+extern "sysv64" fn task_b_main(_receiver: Box<Receiver<u64>>) {
+    // crate::println!("Task b spawned");
     // crate::println!("Task b interrupt flg: {}", x86_64::instructions::interrupts::are_enabled());
     let mut locked = TASK_B_FRAME.lock();
     let frame = locked.as_mut().unwrap();
@@ -114,8 +108,9 @@ impl Counter {
     fn new() -> Self {
         Self(0)
     }
-    fn inc(&mut self) {
+    fn inc(&mut self) -> usize {
         self.0 += 1;
+        self.0
     }
 }
 impl Widget for Counter {
@@ -143,6 +138,7 @@ pub struct GUI {
     timer: Timer,
     counter: Window<widgets::Framed<Counter>>,
     text_field: Rc<Spinlock<Window<widgets::Framed<TextWindow>>>>,
+    idle: TypedTaskHandle<u64>,
 }
 
 impl GUI {
@@ -152,6 +148,7 @@ impl GUI {
         timer: Timer,
         counter: Window<widgets::Framed<Counter>>,
         text_field: Rc<Spinlock<Window<widgets::Framed<TextWindow>>>>,
+        idle: TypedTaskHandle<u64>,
     ) -> Self {
         let buffer = BufferCanvas::vec_backed(screen.pixel_format(), screen.size());
         Self {
@@ -161,6 +158,7 @@ impl GUI {
             timer,
             counter,
             text_field,
+            idle,
         }
     }
 
@@ -184,7 +182,10 @@ impl GUI {
 
     pub fn tick(&mut self) {
         self.timer.tick();
-        self.counter.widget_mut().widget_mut().inc();
+        let t = self.counter.widget_mut().widget_mut().inc();
+        if t % 1000 == 0 {
+            self.idle.send(t as u64);
+        }
         self.counter.buffer();
         self.render_window(self.counter.window_id());
     }
