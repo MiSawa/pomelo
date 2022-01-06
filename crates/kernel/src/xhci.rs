@@ -53,5 +53,4 @@ pub(crate) fn handle_events() {
             log::error!("Something went wrong while processing xhc event: {}", e.0);
         }
     }
-    crate::events::fire_redraw();
 }

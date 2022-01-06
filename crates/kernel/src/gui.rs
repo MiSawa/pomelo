@@ -3,6 +3,7 @@ use pomelo_common::graphics::GraphicConfig;
 use spinning_top::Spinlock;
 
 use crate::{
+    events::Event,
     graphics::{
         buffer::{BufferCanvas, VecBufferCanvas},
         canvas::Canvas,
@@ -32,7 +33,7 @@ pub const DESKTOP_FG_COLOR: Color = Color::WHITE;
 pub const DESKTOP_BG_COLOR: Color = Color::new(45, 118, 237);
 
 pub fn create_gui(graphic_config: &GraphicConfig) -> GUI {
-    let (_, _) = crate::task::initialize::<u32>();
+    let event_receiver = crate::events::initialize();
 
     let mut window_manager = window_manager::create_window_manager(graphic_config);
     let screen = screen::create_screen(graphic_config);
@@ -50,10 +51,7 @@ pub fn create_gui(graphic_config: &GraphicConfig) -> GUI {
     let text_field = create_text_field(&mut window_manager);
     task_b(&mut window_manager);
 
-    crate::task::spawn_task(TaskBuilder::new(idle_task_main)).send(10);
-    let _idle = crate::task::spawn_task(TaskBuilder::new(idle_task_main));
-
-    GUI::new(window_manager, screen, counter, text_field)
+    GUI::new(window_manager, event_receiver, screen, counter, text_field)
 }
 
 lazy_static! {
@@ -72,6 +70,7 @@ fn create_text_field(wm: &mut WindowManager) -> TypedTaskHandle<TextFieldMessage
     let text_field =
         wm.add_builder(WindowBuilder::new(text_field).set_position(Point::new(300, 300)));
     crate::task::spawn_task(TaskBuilder::new_with_arg(
+        "text_field",
         text_field_main,
         Box::new(text_field),
     ))
@@ -95,20 +94,12 @@ extern "sysv64" fn text_field_main(
     }
 }
 
-extern "sysv64" fn idle_task_main(mut receiver: Box<Receiver<u64>>) {
-    // log::warn!("Idle task {}", arg);
-    loop {
-        let value = receiver.dequeue_or_wait();
-        crate::println!("Idle task received {}", value);
-    }
-}
-
 fn task_b(window_manager: &mut WindowManager) {
     let frame = Framed::new("Another task".to_string(), Counter::new());
     let frame =
         window_manager.add_builder(WindowBuilder::new(frame).set_position(Point::new(400, 200)));
     TASK_B_FRAME.lock().get_or_insert_with(|| frame);
-    crate::task::spawn_task(TaskBuilder::new(task_b_main));
+    crate::task::spawn_task(TaskBuilder::new("task-b", task_b_main));
 }
 
 extern "sysv64" fn task_b_main(_receiver: Box<Receiver<u64>>) {
@@ -118,7 +109,8 @@ extern "sysv64" fn task_b_main(_receiver: Box<Receiver<u64>>) {
         frame.widget_mut().widget_mut().inc();
         frame.buffer();
         crate::events::fire_redraw_window(frame.window_id());
-        x86_64::instructions::interrupts::enable_and_hlt();
+        // x86_64::instructions::interrupts::enable_and_hlt();
+        // crate::task::current_task().put_sleep();
     }
 }
 
@@ -153,6 +145,7 @@ impl Widget for Counter {
 
 pub struct GUI {
     window_manager: WindowManager,
+    pub event_receiver: Receiver<Event>,
     screen: Screen,
     buffer: BufferCanvas<alloc::vec::Vec<u8>>,
     counter: Window<widgets::Framed<Counter>>,
@@ -162,6 +155,7 @@ pub struct GUI {
 impl GUI {
     fn new(
         window_manager: WindowManager,
+        event_receiver: Receiver<Event>,
         screen: Screen,
         counter: Window<widgets::Framed<Counter>>,
         text_field: TypedTaskHandle<TextFieldMessage>,
@@ -169,6 +163,7 @@ impl GUI {
         let buffer = BufferCanvas::vec_backed(screen.pixel_format(), screen.size());
         Self {
             window_manager,
+            event_receiver,
             screen,
             buffer,
             counter,

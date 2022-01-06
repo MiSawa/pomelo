@@ -49,14 +49,20 @@ impl<T> Receiver<T> {
     fn producer(&self) -> MPSCProducer<T> {
         self.consumer.producer()
     }
+    pub fn approximate_num_messages(&self) -> usize {
+        self.consumer.approximate_len()
+    }
+    pub fn try_dequeue(&mut self) -> Option<T> {
+        self.consumer.dequeue()
+    }
     pub fn dequeue_or_wait(&mut self) -> T {
-        let mut gen = self.handle.load_generation();
+        let mut gen = self.handle.load_state();
         loop {
             if let Some(v) = self.consumer.dequeue() {
                 return v;
             }
             self.handle.try_compare_and_sleep(gen);
-            gen = self.handle.load_generation();
+            gen = self.handle.load_state();
         }
     }
     pub fn handle(&self) -> TypedTaskHandle<T> {
@@ -110,11 +116,12 @@ pub fn try_switch_context() -> Result<()> {
     loop {
         let need_retry = with_task_manager(|mut manager| match manager.start_context_switch() {
             Ok(s) => {
-                // log::warn!("Switching context: {:?}", s);
+                log::trace!("Switching context: {:?}", s);
                 s.switch(manager);
                 false
             }
             Err(ContextSwitchError::NothingToRun) => {
+                log::error!("Nothing to run");
                 drop(manager);
                 x86_64::instructions::interrupts::enable_and_hlt();
                 true
@@ -145,6 +152,7 @@ impl TaskId {
 
 struct TaskHandleImpl {
     id: TaskId,
+    name: &'static str,
     priority: AtomicTaskPriority,
     /// generation and waking flag
     /// Bit 0 corresponds to the waking flag, and
@@ -156,10 +164,11 @@ pub struct TaskHandle {
     inner: Arc<TaskHandleImpl>,
 }
 impl TaskHandle {
-    fn initialize(id: TaskId, priority: TaskPriority, waking: bool) -> Self {
+    fn initialize(id: TaskId, name: &'static str, priority: TaskPriority, waking: bool) -> Self {
         let state = if waking { 1 } else { 0 };
         let inner = TaskHandleImpl {
             id,
+            name,
             priority: AtomicTaskPriority::new(priority),
             state: AtomicU64::new(state),
         };
@@ -194,60 +203,50 @@ impl TaskHandle {
     }
 
     pub fn awake(&self) {
-        let need_bump = self
-            .inner
+        self.inner
             .state
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |s| {
-                if s & 1 == 1 {
-                    None
-                } else {
-                    Some((s + 2) | 1)
-                }
-            })
-            .is_ok();
-        if need_bump {
-            bump_global_generation();
-        }
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |s| Some((s + 2) | 1))
+            .ok();
+        bump_global_generation();
     }
 
     pub fn put_sleep(&self) {
-        let need_bump = self
-            .inner
+        self.inner
             .state
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |s| {
-                if s & 1 == 1 {
-                    Some((s + 2) & !1) // actually s + 1 but anyway this is the meaning
-                } else {
-                    None
-                }
-            })
-            .is_ok();
-        if need_bump {
-            bump_global_generation();
-        }
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |s| Some((s + 2) & !1))
+            .ok();
+        bump_global_generation();
     }
 
-    fn load_generation(&self) -> u64 {
+    pub fn load_state(&self) -> u64 {
         self.inner.state.load(Ordering::SeqCst)
     }
 
-    fn try_compare_and_sleep(&self, state: u64) -> bool {
+    pub fn try_compare_and_sleep(&self, state: u64) -> bool {
         let success = self
             .inner
             .state
             .compare_exchange(state, (state + 2) & !1, Ordering::SeqCst, Ordering::SeqCst)
             .is_ok();
         if success {
+            x86_64::instructions::interrupts::enable();
             bump_global_generation();
         }
         success
     }
 }
 
-#[derive(Clone)]
 pub struct TypedTaskHandle<T> {
     inner: TaskHandle,
     producer: MPSCProducer<T>,
+}
+impl<T> Clone for TypedTaskHandle<T> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            producer: self.producer.clone(),
+        }
+    }
 }
 impl<T> TypedTaskHandle<T> {
     delegate! {
@@ -258,10 +257,13 @@ impl<T> TypedTaskHandle<T> {
             pub fn set_waking(&self, waking: bool);
             pub fn awake(&self);
             pub fn put_sleep(&self);
+            pub fn load_state(&self) -> u64;
+            pub fn try_compare_and_sleep(&self, state: u64) -> bool;
         }
     }
 
     pub fn send(&self, value: T) {
+        log::trace!("Sending value to {}", self.inner.inner.name);
         self.producer.enqueue(value);
         self.inner.awake();
     }
@@ -331,6 +333,7 @@ impl TaskStack {
 }
 
 pub struct TaskBuilder<T> {
+    name: &'static str,
     task_main: u64,
     arg: u64,
     stack_size: usize,
@@ -340,23 +343,29 @@ pub struct TaskBuilder<T> {
 
 impl<T> TaskBuilder<T> {
     #[must_use]
-    pub fn new(task_main: TaskMain<T>) -> Self {
+    pub fn new(name: &'static str, task_main: TaskMain<T>) -> Self {
         Self {
+            name,
             task_main: task_main as *const u8 as u64,
             arg: 0,
-            stack_size: 128 * 1024, // 128 KiB
-            priority: 1,
+            stack_size: 512 * 1024, // 128 KiB
+            priority: 5,
             _phantom: Default::default(),
         }
     }
 
     #[must_use]
-    pub fn new_with_arg<U>(task_main: TaskMainWithArg<T, U>, arg: Box<U>) -> Self {
+    pub fn new_with_arg<U>(
+        name: &'static str,
+        task_main: TaskMainWithArg<T, U>,
+        arg: Box<U>,
+    ) -> Self {
         Self {
+            name,
             task_main: task_main as *const u8 as u64,
             arg: Box::into_raw(arg) as u64,
             stack_size: 128 * 1024, // 128 KiB
-            priority: 1,
+            priority: 5,
             _phantom: Default::default(),
         }
     }
@@ -364,6 +373,12 @@ impl<T> TaskBuilder<T> {
     #[must_use]
     pub fn set_stack_size(mut self, stack_size: usize) -> Self {
         self.stack_size = stack_size;
+        self
+    }
+
+    #[must_use]
+    pub fn set_priority(mut self, priority: TaskPriority) -> Self {
+        self.priority = priority;
         self
     }
 }
@@ -376,7 +391,7 @@ pub struct Task {
 
 impl Task {
     fn empty<T>() -> (Self, Receiver<T>, TypedTaskHandle<T>) {
-        let handle = TaskHandle::initialize(TaskId::new(), 1, true);
+        let handle = TaskHandle::initialize(TaskId::new(), "main", 10, true);
         let receiver = Receiver::new(handle.clone());
         let producer = receiver.producer();
         let context = Box::new(TaskContext::default());
@@ -396,7 +411,12 @@ impl Task {
     fn create_with_handle<T>(task_builder: TaskBuilder<T>) -> (Self, TypedTaskHandle<T>) {
         use x86_64::instructions::segmentation::{Segment, CS, FS, GS, SS};
 
-        let handle = TaskHandle::initialize(TaskId::new(), task_builder.priority, true);
+        let handle = TaskHandle::initialize(
+            TaskId::new(),
+            task_builder.name,
+            task_builder.priority,
+            true,
+        );
         let receiver = Box::new(Receiver::new(handle.clone()));
         let producer = receiver.producer();
 
@@ -440,8 +460,11 @@ impl Task {
 }
 
 #[derive(Debug)]
+#[allow(unused)] // We do use this via {:?} on debug
 struct ContextSwitchPartial {
+    current_name: &'static str,
     current: TaskContextPtr,
+    next_name: &'static str,
     next: TaskContextPtr,
 }
 #[derive(Debug)]
@@ -472,12 +495,13 @@ impl TaskManager {
         let ptr = main_task.context_ptr();
         tasks.insert(handle.id(), main_task);
         let old_generation = TASK_CONFIG_GENERATION.fetch_add(1, Ordering::SeqCst);
-        let ret = Self {
+        let mut ret = Self {
             tasks,
             task_queue: VecDeque::new(),
             current_generation: old_generation,
             current_task: (handle, ptr),
         };
+        ret.add_task(TaskBuilder::new("idle", idle_task_main));
         (ret, receiver, typed_handle)
     }
 
@@ -501,6 +525,11 @@ impl TaskManager {
             if !task.handle.waking() {
                 continue;
             }
+            log::trace!(
+                "Task {}: {}",
+                task.handle.inner.name,
+                task.handle.inner.state.load(Ordering::SeqCst)
+            );
             match task.handle.priority().cmp(&current_priority) {
                 core::cmp::Ordering::Less => continue,
                 core::cmp::Ordering::Equal => self
@@ -521,11 +550,20 @@ impl TaskManager {
         &mut self,
     ) -> core::result::Result<ContextSwitchPartial, ContextSwitchError> {
         self.refresh_task_queue_if_necessary();
-        self.task_queue.rotate_left(1);
+        if !self.task_queue.is_empty() {
+            self.task_queue.rotate_left(1);
+        }
         if let Some((handle, ptr)) = self.task_queue.front().cloned() {
+            let current_name = self.current_task.0.inner.name;
             let current = self.current_task.1;
+            let next_name = handle.inner.name;
             self.current_task = (handle, ptr);
-            Ok(ContextSwitchPartial { current, next: ptr })
+            Ok(ContextSwitchPartial {
+                current,
+                current_name,
+                next: ptr,
+                next_name,
+            })
         } else {
             Err(ContextSwitchError::NothingToRun)
         }
@@ -537,6 +575,12 @@ impl TaskManager {
 }
 
 extern "sysv64" fn _whatever<T>(_: Box<Receiver<T>>) {}
+
+extern "sysv64" fn idle_task_main(_receiver: Box<Receiver<()>>) {
+    loop {
+        x86_64::instructions::interrupts::enable_and_hlt();
+    }
+}
 
 #[naked]
 extern "sysv64" fn switch_context(next: TaskContextPtr, current: TaskContextPtr) {

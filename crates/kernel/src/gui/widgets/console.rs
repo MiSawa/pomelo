@@ -45,13 +45,14 @@ pub fn fallback_console() -> impl core::fmt::Write {
     struct FallbackConsoleWrite;
     impl core::fmt::Write for FallbackConsoleWrite {
         fn write_str(&mut self, s: &str) -> core::fmt::Result {
-            if let Some((console, screen)) = FALLBACK_CONSOLE.lock().as_mut() {
-                console.write_str(s);
-                console.draw(screen);
-                Ok(())
-            } else {
-                Err(core::fmt::Error)
+            if let Some(mut opt) = FALLBACK_CONSOLE.try_lock() {
+                if let Some((console, screen)) = opt.as_mut() {
+                    console.write_str(s);
+                    console.draw(screen);
+                    return Ok(());
+                }
             }
+            Err(core::fmt::Error)
         }
     }
     FallbackConsoleWrite
@@ -61,9 +62,12 @@ pub fn global_console() -> impl core::fmt::Write {
     struct GlobalConsoleWrite;
     impl core::fmt::Write for GlobalConsoleWrite {
         fn write_str(&mut self, s: &str) -> core::fmt::Result {
-            let mut console = GLOBAL_CONSOLE.lock();
-            console.write_str(s);
-            Ok(())
+            if let Some(mut console) = GLOBAL_CONSOLE.try_lock() {
+                console.write_str(s);
+                Ok(())
+            } else {
+                Err(core::fmt::Error)
+            }
         }
     }
     impl Drop for GlobalConsoleWrite {

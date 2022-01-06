@@ -40,7 +40,7 @@ fn end_of_interrupt() {
 }
 
 extern "x86-interrupt" fn interrupt_handler_xhci(_stack_frame: InterruptStackFrame) {
-    log::trace!("Handling XHCI interruption");
+    // log::warn!("Handling XHCI interruption");
     crate::events::fire_xhci();
     end_of_interrupt()
 }

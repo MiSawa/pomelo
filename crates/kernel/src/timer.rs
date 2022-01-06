@@ -137,7 +137,9 @@ pub fn schedule<T: 'static + Send + Clone>(
 ) {
     GLOBAL_TIMER
         .lock()
-        .schedule(initial_delay_millis, interval_millis, move || handle.send(message.clone()) )
+        .schedule(initial_delay_millis, interval_millis, move || {
+            handle.send(message.clone())
+        })
 }
 
 enum Task {

@@ -47,9 +47,11 @@ macro_rules! println {
 
 pub fn _print_impl(args: ::core::fmt::Arguments) {
     use core::fmt::Write;
-    let mut writer = crate::gui::widgets::console::global_console();
-    // let mut writer = crate::gui::widgets::console::fallback_console();
-    writer.write_fmt(args).unwrap();
+    x86_64::instructions::interrupts::without_interrupts(|| {
+        let mut writer = crate::gui::widgets::console::global_console();
+        // let mut writer = crate::gui::widgets::console::fallback_console();
+        writer.write_fmt(args).ok();
+    })
 }
 
 pub mod prelude {

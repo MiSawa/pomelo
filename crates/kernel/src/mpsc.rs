@@ -1,6 +1,6 @@
 use core::{
     cell::UnsafeCell,
-    sync::atomic::{AtomicPtr, Ordering},
+    sync::atomic::{AtomicPtr, AtomicUsize, Ordering},
 };
 
 use alloc::{boxed::Box, sync::Arc};
@@ -22,6 +22,9 @@ impl<T> MPSCConsumer<T> {
     pub fn dequeue(&mut self) -> Option<T> {
         self.state.dequeue()
     }
+    pub fn approximate_len(&self) -> usize {
+        self.state.len.load(Ordering::Relaxed)
+    }
     pub fn producer(&self) -> MPSCProducer<T> {
         MPSCProducer {
             state: self.state.clone(),
@@ -29,9 +32,15 @@ impl<T> MPSCConsumer<T> {
     }
 }
 
-#[derive(Clone)]
 pub struct MPSCProducer<T> {
     state: Arc<SharedState<T>>,
+}
+impl<T> Clone for MPSCProducer<T> {
+    fn clone(&self) -> Self {
+        Self {
+            state: self.state.clone(),
+        }
+    }
 }
 impl<T> MPSCProducer<T> {
     pub fn enqueue(&self, value: T) {
@@ -61,6 +70,7 @@ impl<T> Node<T> {
     }
 }
 struct SharedState<T> {
+    len: AtomicUsize,
     head: AtomicPtr<Node<T>>,
     tail: UnsafeCell<*mut Node<T>>,
 }
@@ -69,6 +79,7 @@ impl<T> SharedState<T> {
     fn new() -> Self {
         let dummy = Node::dummy().into_ptr();
         Self {
+            len: AtomicUsize::new(0),
             head: AtomicPtr::new(dummy),
             tail: UnsafeCell::new(dummy),
         }
@@ -78,6 +89,7 @@ impl<T> SharedState<T> {
         let node = Node::new(value).into_ptr();
         let previous_head = self.head.swap(node, Ordering::AcqRel);
         unsafe { (*previous_head).next.store(node, Ordering::Release) };
+        self.len.fetch_add(1, Ordering::Release);
     }
 
     fn dequeue(&self) -> Option<T> {
@@ -90,12 +102,13 @@ impl<T> SharedState<T> {
         let _ = unsafe { Box::from_raw(tail) };
         let ret = unsafe { (*next).value.take() };
         assert!(ret.is_some());
+        self.len.fetch_sub(1, Ordering::Acquire);
         ret
     }
 }
 
-unsafe impl<T: Send> Send for SharedState<T> { }
-unsafe impl<T: Send> Sync for SharedState<T> { }
+unsafe impl<T: Send> Send for SharedState<T> {}
+unsafe impl<T: Send> Sync for SharedState<T> {}
 
 impl<T> Drop for SharedState<T> {
     fn drop(&mut self) {

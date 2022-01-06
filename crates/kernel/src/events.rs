@@ -1,4 +1,6 @@
-use alloc::collections::VecDeque;
+use core::sync::atomic::{AtomicPtr, Ordering};
+
+use alloc::{boxed::Box, collections::VecDeque};
 use lazy_static::lazy_static;
 use spinning_top::Spinlock;
 use x86_64::instructions::interrupts;
@@ -8,17 +10,40 @@ use crate::{
     gui::{window_manager::WindowId, GUI},
     keyboard::{self, KeyCode},
     prelude::*,
+    task::{spawn_task, Receiver, TaskBuilder, TypedTaskHandle},
     xhci,
 };
 
 lazy_static! {
-    static ref GLOAL_QUEUE: Spinlock<EventQueue> = Spinlock::new(Default::default());
+    static ref XHCI_HANDLE: AtomicPtr<TypedTaskHandle<u8>> = AtomicPtr::default();
+    static ref GUI_HANDLE: AtomicPtr<TypedTaskHandle<Event>> = AtomicPtr::default();
+    static ref REDRAW_QUEUE: Spinlock<VecDeque<Event>> = Spinlock::new(VecDeque::new());
 }
-const MAX_CHUNKED_REDRAW_COUNT: usize = 10;
+const MAX_PENDING_REDRAW: usize = 10;
+
+pub fn initialize() -> Receiver<Event> {
+    let (receiver, queue) = crate::task::initialize::<Event>();
+    GUI_HANDLE.store(Box::into_raw(Box::new(queue)), Ordering::Release);
+    let handle = spawn_task(
+        TaskBuilder::new("xhci", xhci_handler)
+            .set_priority(10)
+            .set_stack_size(10 * 1024 * 1024),
+    );
+    XHCI_HANDLE.store(Box::into_raw(Box::new(handle)), Ordering::Release);
+    receiver
+}
+
+extern "sysv64" fn xhci_handler(mut receiver: Box<Receiver<u8>>) {
+    loop {
+        x86_64::instructions::interrupts::enable();
+        let _ = receiver.dequeue_or_wait();
+        log::info!("Got a XHCI event");
+        xhci::handle_events();
+    }
+}
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub enum Event {
-    XHCI,
     Drag { start: Point, end: Point },
     KeyPress(KeyCode),
     Redraw,
@@ -26,104 +51,96 @@ pub enum Event {
     RedrawArea(Rectangle),
 }
 
-#[derive(Default)]
-struct EventQueue {
-    input_event: VecDeque<Event>,
-    xhci_events: VecDeque<Event>,
-    redraw_events: VecDeque<Event>,
+fn with_handle<E, F: FnOnce(TypedTaskHandle<E>)>(handle: &AtomicPtr<TypedTaskHandle<E>>, f: F) {
+    let handle = handle.load(Ordering::Acquire);
+    if handle.is_null() {
+        return;
+    }
+    f(unsafe { (*handle).clone() });
 }
 
-fn with_queue_locked<T, F: FnOnce(spinning_top::SpinlockGuard<EventQueue>) -> T>(f: F) -> T {
+fn with_draw_queue_locked<T, F: FnOnce(spinning_top::SpinlockGuard<VecDeque<Event>>) -> T>(
+    f: F,
+) -> T {
     interrupts::without_interrupts(|| {
-        let locked = GLOAL_QUEUE.lock();
+        let locked = REDRAW_QUEUE.lock();
         f(locked)
     })
 }
 
 pub fn fire_xhci() {
-    with_queue_locked(|mut q| q.xhci_events.push_back(Event::XHCI));
+    with_handle(&XHCI_HANDLE, |q| q.send(0))
 }
 
 pub fn fire_drag(start: Point, end: Point) {
-    with_queue_locked(|mut q| q.input_event.push_back(Event::Drag { start, end }));
+    with_handle(&GUI_HANDLE, |q| q.send(Event::Drag { start, end }));
 }
 
 pub fn fire_key_press(keycode: keyboard::KeyCode) {
-    with_queue_locked(|mut q| q.input_event.push_back(Event::KeyPress(keycode)));
+    with_handle(&GUI_HANDLE, |q| q.send(Event::KeyPress(keycode)));
 }
 
 pub fn fire_redraw() {
-    with_queue_locked(|mut q| {
-        q.redraw_events.clear();
-        q.redraw_events.push_back(Event::Redraw);
+    with_draw_queue_locked(|mut q| {
+        q.clear();
+        q.push_back(Event::Redraw)
     });
+    with_handle(&GUI_HANDLE, |q| q.awake());
 }
 pub fn fire_redraw_window(id: WindowId) {
-    with_queue_locked(|mut q| {
-        if q.redraw_events.len() > MAX_CHUNKED_REDRAW_COUNT {
-            q.redraw_events.clear();
-            q.redraw_events.push_back(Event::Redraw);
+    with_draw_queue_locked(|mut q| {
+        if q.len() < MAX_PENDING_REDRAW {
+            q.push_back(Event::RedrawWindow(id))
         } else {
-            q.redraw_events.push_back(Event::RedrawWindow(id));
+            q.clear();
         }
     });
+    with_handle(&GUI_HANDLE, |q| q.awake());
 }
 pub fn fire_redraw_area(area: Rectangle) {
-    with_queue_locked(|mut q| {
-        if q.redraw_events.len() > MAX_CHUNKED_REDRAW_COUNT {
-            q.redraw_events.clear();
-            q.redraw_events.push_back(Event::Redraw);
+    with_draw_queue_locked(|mut q| {
+        if q.len() < MAX_PENDING_REDRAW {
+            q.push_back(Event::RedrawArea(area));
         } else {
-            q.redraw_events.push_back(Event::RedrawArea(area));
+            q.clear();
         }
     });
-}
-
-fn deque() -> Option<Event> {
-    with_queue_locked(|mut q| {
-        if let Some(ret) = q.input_event.pop_front() {
-            return Some(ret);
-        }
-        if let Some(ret) = q.xhci_events.pop_front() {
-            return Some(ret);
-        }
-        if let Some(ret) = q.redraw_events.pop_front() {
-            return Some(ret);
-        }
-        None
-    })
+    with_handle(&GUI_HANDLE, |q| q.awake());
 }
 
 pub fn event_loop(mut gui: GUI) -> Result<!> {
     // crate::task::current_task().set_priority(3);
-    log::info!("start event loop");
+    log::info!("Start event loop");
     loop {
-        interrupts::disable();
-        if let Some(event) = deque() {
-            interrupts::enable();
-            log::trace!("Got an event {:?}", event);
-            match event {
-                Event::XHCI => {
-                    xhci::handle_events();
-                }
-                Event::Drag { start, end } => {
-                    gui.drag(start, end);
-                }
-                Event::KeyPress(keycode) => {
-                    gui.key_press(keycode);
-                }
-                Event::Redraw => {
-                    gui.render();
-                }
-                Event::RedrawWindow(id) => {
-                    gui.render_window(id);
-                }
-                Event::RedrawArea(area) => {
-                    gui.render_area(area);
-                }
-            }
+        let state = gui.event_receiver.handle().load_state();
+        let event = gui
+            .event_receiver
+            .try_dequeue()
+            .or_else(|| with_draw_queue_locked(|mut q| q.pop_front()));
+        let event = if let Some(event) = event {
+            event
         } else {
-            interrupts::enable_and_hlt();
+            gui.event_receiver.handle().try_compare_and_sleep(state);
+            continue;
+        };
+        log::info!("Got an event {:?}", event);
+        match event {
+            Event::Drag { start, end } => {
+                gui.drag(start, end);
+            }
+            Event::KeyPress(keycode) => {
+                gui.key_press(keycode);
+            }
+            Event::Redraw => {
+                with_draw_queue_locked(|mut q| q.clear());
+                gui.render();
+            }
+            Event::RedrawWindow(id) => {
+                gui.render_window(id);
+            }
+            Event::RedrawArea(area) => {
+                gui.render_area(area);
+            }
         }
     }
 }
