@@ -1,15 +1,16 @@
 use core::cmp::Reverse;
 
 use alloc::{boxed::Box, collections::binary_heap::BinaryHeap, rc::Rc};
+use spinning_top::Spinlock;
 
-use crate::{interrupts::InterruptIndex, prelude::*};
+use crate::{interrupts::InterruptIndex, prelude::*, task::TypedTaskHandle};
 
 /// The target value of LAPIC timer frequency
 pub const TARGET_FREQUENCY: u32 = 100; // once per 10 ms
 const MILLISEC_PER_TICK: u64 = 1000 / TARGET_FREQUENCY as u64;
 
 /// How much duration we will use to adjust the LAPIC timer frequency
-const INITIALIZATION_MILLIS: u32 = 1000;
+const INITIALIZATION_MILLIS: u32 = 100;
 const MAX_TIMER_COUNT: u32 = u32::MAX;
 const DEFAULT_TIMER_COUNT: u32 = 10000000;
 const PM_TIMER_FREQUENCY: u32 = 3579545;
@@ -117,13 +118,35 @@ pub fn initialize(acpi2_rsdp: Option<*const core::ffi::c_void>) {
     }
 }
 
+lazy_static! {
+    static ref GLOBAL_TIMER: Spinlock<Timer> = Spinlock::new(Timer::new());
+}
+pub fn tick() {
+    GLOBAL_TIMER.lock().tick();
+}
+pub fn register<T: 'static + Send>(delay_millis: u64, handle: TypedTaskHandle<T>, message: T) {
+    GLOBAL_TIMER
+        .lock()
+        .register(delay_millis, move || handle.send(message))
+}
+pub fn schedule<T: 'static + Send + Clone>(
+    initial_delay_millis: u64,
+    interval_millis: u64,
+    handle: TypedTaskHandle<T>,
+    message: T,
+) {
+    GLOBAL_TIMER
+        .lock()
+        .schedule(initial_delay_millis, interval_millis, move || handle.send(message.clone()) )
+}
+
 enum Task {
     Oneshot {
-        callback: Box<dyn FnMut()>,
+        callback: Box<dyn FnMut() + Send>,
     },
     Periodic {
         interval_ticks: u64,
-        callback: Box<dyn FnMut()>,
+        callback: Box<dyn FnMut() + Send>,
     },
 }
 struct TaskEntry {
@@ -188,7 +211,7 @@ impl Timer {
         }
     }
 
-    pub fn register<F: 'static + FnOnce()>(&mut self, delay_millis: u64, f: F) {
+    pub fn register<F: 'static + FnOnce() + Send>(&mut self, delay_millis: u64, f: F) {
         let mut opt = Some(f);
         self.queue.push(Reverse(TaskEntry {
             target_tick: self.tick + delay_millis / MILLISEC_PER_TICK,
@@ -204,7 +227,7 @@ impl Timer {
         self.next_task_id += 1;
     }
 
-    pub fn schedule<F: 'static + FnMut()>(
+    pub fn schedule<F: 'static + FnMut() + Send>(
         &mut self,
         initial_delay_millis: u64,
         interval_millis: u64,

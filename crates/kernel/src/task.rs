@@ -1,5 +1,6 @@
 use core::{
     arch::asm,
+    marker::PhantomData,
     sync::atomic::{AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering},
 };
 
@@ -15,18 +16,19 @@ use alloc::{
     vec::Vec,
 };
 use delegate::delegate;
-use spinning_top::{Spinlock, SpinlockGuard};
+use spinning_top::{MappedSpinlockGuard, Spinlock, SpinlockGuard};
 
 lazy_static! {
-    static ref TASK_MANAGER: Spinlock<TaskManager> = Spinlock::new(TaskManager::create());
+    static ref TASK_MANAGER: Spinlock<Option<TaskManager>> = Spinlock::new(None);
 }
 
 pub type TaskMain<T> = extern "sysv64" fn(Box<Receiver<T>>);
+pub type TaskMainWithArg<T, U> = extern "sysv64" fn(Box<Receiver<T>>, Box<U>);
 pub type TaskPriority = u8;
 type AtomicTaskPriority = AtomicU8;
 type Generation = u64;
 type AtomicGeneration = AtomicU64;
-type LockedManager<'a> = SpinlockGuard<'a, TaskManager>;
+type LockedManager<'a> = MappedSpinlockGuard<'a, TaskManager>;
 
 const PREEMPTION_FREQUENCY: u32 = 50; // 20 ms
 const TICKS_PER_PREEMPTION: u32 = crate::timer::TARGET_FREQUENCY / PREEMPTION_FREQUENCY;
@@ -57,6 +59,24 @@ impl<T> Receiver<T> {
             gen = self.handle.load_generation();
         }
     }
+    pub fn handle(&self) -> TypedTaskHandle<T> {
+        TypedTaskHandle {
+            inner: self.handle.clone(),
+            producer: self.consumer.producer(),
+        }
+    }
+}
+
+pub fn initialize<T>() -> (Receiver<T>, TypedTaskHandle<T>) {
+    x86_64::instructions::interrupts::without_interrupts(|| {
+        let mut task_manager = TASK_MANAGER.lock();
+        if task_manager.is_some() {
+            panic!("Initializing task manager more than once!");
+        }
+        let (manager, receiver, handle) = TaskManager::create();
+        *task_manager = Some(manager);
+        (receiver, handle)
+    })
 }
 
 pub fn tick_and_check_context_switch() -> bool {
@@ -71,7 +91,9 @@ pub fn tick_and_check_context_switch() -> bool {
 fn with_task_manager<T, F: FnOnce(LockedManager) -> T>(f: F) -> Result<T> {
     x86_64::instructions::interrupts::without_interrupts(|| {
         if let Some(locked) = TASK_MANAGER.try_lock() {
-            Ok(f(locked))
+            let manager = SpinlockGuard::try_map(locked, Option::as_mut)
+                .map_err(|_| Error::Whatever("Task manager is not initialized yet"))?;
+            Ok(f(manager))
         } else {
             Err(Error::Whatever(
                 "Failed to take the lock for task schedular...",
@@ -93,7 +115,6 @@ pub fn try_switch_context() -> Result<()> {
                 false
             }
             Err(ContextSwitchError::NothingToRun) => {
-                log::warn!("Nothing to run???");
                 drop(manager);
                 x86_64::instructions::interrupts::enable_and_hlt();
                 true
@@ -310,27 +331,34 @@ impl TaskStack {
 }
 
 pub struct TaskBuilder<T> {
-    task_main: TaskMain<T>,
+    task_main: u64,
     arg: u64,
     stack_size: usize,
     priority: TaskPriority,
+    _phantom: PhantomData<T>,
 }
 
 impl<T> TaskBuilder<T> {
     #[must_use]
     pub fn new(task_main: TaskMain<T>) -> Self {
         Self {
-            task_main,
+            task_main: task_main as *const u8 as u64,
             arg: 0,
             stack_size: 128 * 1024, // 128 KiB
             priority: 1,
+            _phantom: Default::default(),
         }
     }
 
     #[must_use]
-    pub fn set_arg(mut self, arg: u64) -> Self {
-        self.arg = arg;
-        self
+    pub fn new_with_arg<U>(task_main: TaskMainWithArg<T, U>, arg: Box<U>) -> Self {
+        Self {
+            task_main: task_main as *const u8 as u64,
+            arg: Box::into_raw(arg) as u64,
+            stack_size: 128 * 1024, // 128 KiB
+            priority: 1,
+            _phantom: Default::default(),
+        }
     }
 
     #[must_use]
@@ -347,10 +375,24 @@ pub struct Task {
 }
 
 impl Task {
-    fn empty() -> Self {
-        Self::create_with_handle(TaskBuilder::new(_whatever).set_stack_size(0)).0
+    fn empty<T>() -> (Self, Receiver<T>, TypedTaskHandle<T>) {
+        let handle = TaskHandle::initialize(TaskId::new(), 1, true);
+        let receiver = Receiver::new(handle.clone());
+        let producer = receiver.producer();
+        let context = Box::new(TaskContext::default());
+        (
+            Self {
+                context,
+                handle: handle.clone(),
+                _stack: TaskStack::new(0),
+            },
+            receiver,
+            TypedTaskHandle {
+                inner: handle,
+                producer,
+            },
+        )
     }
-
     fn create_with_handle<T>(task_builder: TaskBuilder<T>) -> (Self, TypedTaskHandle<T>) {
         use x86_64::instructions::segmentation::{Segment, CS, FS, GS, SS};
 
@@ -360,9 +402,9 @@ impl Task {
 
         let mut context = Box::new(TaskContext::default());
         let stack = TaskStack::new(task_builder.stack_size);
-        context.rip = task_builder.task_main as *const u8 as u64;
+        context.rip = task_builder.task_main;
         context.rdi = Box::into_raw(receiver) as u64;
-        // context.rsi = 0;
+        context.rsi = task_builder.arg;
         unsafe {
             asm!("mov {}, cr3", out(reg) context.cr3, options(nomem, nostack, preserves_flags))
         };
@@ -423,19 +465,20 @@ struct TaskManager {
     current_task: TaskQueueEntry,
 }
 impl TaskManager {
-    fn create() -> Self {
-        let main_task = Task::empty();
+    fn create<T>() -> (Self, Receiver<T>, TypedTaskHandle<T>) {
+        let (main_task, receiver, typed_handle) = Task::empty();
         let mut tasks = BTreeMap::new();
         let handle = main_task.handle.clone();
         let ptr = main_task.context_ptr();
         tasks.insert(handle.id(), main_task);
         let old_generation = TASK_CONFIG_GENERATION.fetch_add(1, Ordering::SeqCst);
-        Self {
+        let ret = Self {
             tasks,
             task_queue: VecDeque::new(),
             current_generation: old_generation,
             current_task: (handle, ptr),
-        }
+        };
+        (ret, receiver, typed_handle)
     }
 
     fn add_task<T>(&mut self, task_builder: TaskBuilder<T>) -> TypedTaskHandle<T> {
@@ -493,7 +536,7 @@ impl TaskManager {
     }
 }
 
-extern "sysv64" fn _whatever(_: Box<Receiver<()>>) {}
+extern "sysv64" fn _whatever<T>(_: Box<Receiver<T>>) {}
 
 #[naked]
 extern "sysv64" fn switch_context(next: TaskContextPtr, current: TaskContextPtr) {

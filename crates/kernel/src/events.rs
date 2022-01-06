@@ -19,7 +19,6 @@ const MAX_CHUNKED_REDRAW_COUNT: usize = 10;
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub enum Event {
     XHCI,
-    LAPICTimer,
     Drag { start: Point, end: Point },
     KeyPress(KeyCode),
     Redraw,
@@ -29,7 +28,6 @@ pub enum Event {
 
 #[derive(Default)]
 struct EventQueue {
-    timer_events: VecDeque<Event>,
     input_event: VecDeque<Event>,
     xhci_events: VecDeque<Event>,
     redraw_events: VecDeque<Event>,
@@ -44,10 +42,6 @@ fn with_queue_locked<T, F: FnOnce(spinning_top::SpinlockGuard<EventQueue>) -> T>
 
 pub fn fire_xhci() {
     with_queue_locked(|mut q| q.xhci_events.push_back(Event::XHCI));
-}
-
-pub fn fire_lapic_timer() {
-    with_queue_locked(|mut q| q.timer_events.push_back(Event::LAPICTimer));
 }
 
 pub fn fire_drag(start: Point, end: Point) {
@@ -87,9 +81,6 @@ pub fn fire_redraw_area(area: Rectangle) {
 
 fn deque() -> Option<Event> {
     with_queue_locked(|mut q| {
-        if let Some(ret) = q.timer_events.pop_front() {
-            return Some(ret);
-        }
         if let Some(ret) = q.input_event.pop_front() {
             return Some(ret);
         }
@@ -104,6 +95,7 @@ fn deque() -> Option<Event> {
 }
 
 pub fn event_loop(mut gui: GUI) -> Result<!> {
+    // crate::task::current_task().set_priority(3);
     log::info!("start event loop");
     loop {
         interrupts::disable();
@@ -111,9 +103,6 @@ pub fn event_loop(mut gui: GUI) -> Result<!> {
             interrupts::enable();
             log::trace!("Got an event {:?}", event);
             match event {
-                Event::LAPICTimer => {
-                    gui.tick();
-                }
                 Event::XHCI => {
                     xhci::handle_events();
                 }

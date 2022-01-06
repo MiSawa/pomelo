@@ -94,6 +94,9 @@ impl<T> SharedState<T> {
     }
 }
 
+unsafe impl<T: Send> Send for SharedState<T> { }
+unsafe impl<T: Send> Sync for SharedState<T> { }
+
 impl<T> Drop for SharedState<T> {
     fn drop(&mut self) {
         let mut p = unsafe { *self.tail.get() };

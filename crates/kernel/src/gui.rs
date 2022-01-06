@@ -1,16 +1,21 @@
-use alloc::{boxed::Box, rc::Rc, string::ToString};
+use alloc::{boxed::Box, string::ToString};
 use pomelo_common::graphics::GraphicConfig;
 use spinning_top::Spinlock;
 
-use crate::{graphics::{
+use crate::{
+    graphics::{
         buffer::{BufferCanvas, VecBufferCanvas},
         canvas::Canvas,
         screen::{self, Screen},
         Color, Point, Rectangle, Size, UCoordinate, Vector2d,
-    }, gui::{
+    },
+    gui::{
         widgets::{console, text_window::TextWindow, Framed},
         window_manager::{WindowId, WindowManager},
-    }, keyboard::KeyCode, task::{Receiver, TaskBuilder, TypedTaskHandle}, timer::Timer};
+    },
+    keyboard::KeyCode,
+    task::{Receiver, TaskBuilder, TypedTaskHandle},
+};
 
 use self::{
     widgets::{desktop::Desktop, Widget},
@@ -27,6 +32,8 @@ pub const DESKTOP_FG_COLOR: Color = Color::WHITE;
 pub const DESKTOP_BG_COLOR: Color = Color::new(45, 118, 237);
 
 pub fn create_gui(graphic_config: &GraphicConfig) -> GUI {
+    let (_, _) = crate::task::initialize::<u32>();
+
     let mut window_manager = window_manager::create_window_manager(graphic_config);
     let screen = screen::create_screen(graphic_config);
     let size = Size::new(
@@ -40,37 +47,52 @@ pub fn create_gui(graphic_config: &GraphicConfig) -> GUI {
     let counter = Framed::new("Counter".to_string(), Counter::new());
     let counter =
         window_manager.add_builder(WindowBuilder::new(counter).set_position(Point::new(300, 200)));
-
-    let text_field = TextWindow::new(Color::BLACK, Color::WHITE, 30);
-    let text_field = Framed::new("Text box".to_string(), text_field);
-    let text_field = window_manager
-        .add_builder(WindowBuilder::new(text_field).set_position(Point::new(300, 300)));
-    let text_field = Rc::new(Spinlock::new(text_field));
-    let cloned = text_field.clone();
-
-    let mut timer = Timer::new();
-
-    timer.schedule(500, 500, move || {
-        let mut text_field = cloned.lock();
-        text_field
-            .widget_mut()
-            .widget_mut()
-            .flip_cursor_visibility();
-        text_field.buffer();
-        crate::events::fire_redraw_window(text_field.window_id());
-    });
-
+    let text_field = create_text_field(&mut window_manager);
     task_b(&mut window_manager);
 
     crate::task::spawn_task(TaskBuilder::new(idle_task_main)).send(10);
-    let idle = crate::task::spawn_task(TaskBuilder::new(idle_task_main));
+    let _idle = crate::task::spawn_task(TaskBuilder::new(idle_task_main));
 
-    GUI::new(window_manager, screen, timer, counter, text_field, idle)
+    GUI::new(window_manager, screen, counter, text_field)
 }
 
 lazy_static! {
     static ref TASK_B_FRAME: Spinlock<Option<Window<widgets::Framed<Counter>>>> =
         Spinlock::new(None);
+}
+
+#[derive(Clone, Debug)]
+enum TextFieldMessage {
+    Blink,
+    Append(char),
+}
+fn create_text_field(wm: &mut WindowManager) -> TypedTaskHandle<TextFieldMessage> {
+    let text_field = TextWindow::new(Color::BLACK, Color::WHITE, 30);
+    let text_field = Framed::new("Text box".to_string(), text_field);
+    let text_field =
+        wm.add_builder(WindowBuilder::new(text_field).set_position(Point::new(300, 300)));
+    crate::task::spawn_task(TaskBuilder::new_with_arg(
+        text_field_main,
+        Box::new(text_field),
+    ))
+}
+extern "sysv64" fn text_field_main(
+    mut receiver: Box<Receiver<TextFieldMessage>>,
+    mut text_field: Box<Window<Framed<TextWindow>>>,
+) {
+    crate::timer::schedule(500, 500, receiver.handle(), TextFieldMessage::Blink);
+    loop {
+        let message = receiver.dequeue_or_wait();
+        match message {
+            TextFieldMessage::Blink => text_field
+                .widget_mut()
+                .widget_mut()
+                .flip_cursor_visibility(),
+            TextFieldMessage::Append(c) => text_field.widget_mut().widget_mut().push(c),
+        }
+        text_field.buffer();
+        crate::events::fire_redraw_window(text_field.window_id());
+    }
 }
 
 extern "sysv64" fn idle_task_main(mut receiver: Box<Receiver<u64>>) {
@@ -86,12 +108,10 @@ fn task_b(window_manager: &mut WindowManager) {
     let frame =
         window_manager.add_builder(WindowBuilder::new(frame).set_position(Point::new(400, 200)));
     TASK_B_FRAME.lock().get_or_insert_with(|| frame);
-    crate::task::spawn_task(TaskBuilder::new(task_b_main).set_arg(0));
+    crate::task::spawn_task(TaskBuilder::new(task_b_main));
 }
 
 extern "sysv64" fn task_b_main(_receiver: Box<Receiver<u64>>) {
-    // crate::println!("Task b spawned");
-    // crate::println!("Task b interrupt flg: {}", x86_64::instructions::interrupts::are_enabled());
     let mut locked = TASK_B_FRAME.lock();
     let frame = locked.as_mut().unwrap();
     loop {
@@ -135,39 +155,40 @@ pub struct GUI {
     window_manager: WindowManager,
     screen: Screen,
     buffer: BufferCanvas<alloc::vec::Vec<u8>>,
-    timer: Timer,
     counter: Window<widgets::Framed<Counter>>,
-    text_field: Rc<Spinlock<Window<widgets::Framed<TextWindow>>>>,
-    idle: TypedTaskHandle<u64>,
+    text_field: TypedTaskHandle<TextFieldMessage>,
 }
 
 impl GUI {
     fn new(
         window_manager: WindowManager,
         screen: Screen,
-        timer: Timer,
         counter: Window<widgets::Framed<Counter>>,
-        text_field: Rc<Spinlock<Window<widgets::Framed<TextWindow>>>>,
-        idle: TypedTaskHandle<u64>,
+        text_field: TypedTaskHandle<TextFieldMessage>,
     ) -> Self {
         let buffer = BufferCanvas::vec_backed(screen.pixel_format(), screen.size());
         Self {
             window_manager,
             screen,
             buffer,
-            timer,
             counter,
             text_field,
-            idle,
         }
     }
 
+    fn inc_counter(&mut self) {
+        self.counter.widget_mut().widget_mut().inc();
+        self.counter.buffer();
+    }
+
     pub fn render(&mut self) {
+        self.inc_counter();
         self.window_manager.render(&mut self.buffer);
         self.screen.draw_buffer(Vector2d::zero(), &self.buffer);
     }
 
     pub fn render_window(&mut self, id: WindowId) {
+        self.inc_counter();
         if let Some(area) = self.window_manager.draw_window(&mut self.buffer, id) {
             self.screen
                 .draw_buffer_area(Vector2d::zero(), &self.buffer, area);
@@ -175,31 +196,21 @@ impl GUI {
     }
 
     pub fn render_area(&mut self, area: Rectangle) {
+        self.inc_counter();
         self.window_manager.draw_area(&mut self.buffer, area);
         self.screen
             .draw_buffer_area(Vector2d::zero(), &self.buffer, area);
     }
 
-    pub fn tick(&mut self) {
-        self.timer.tick();
-        let t = self.counter.widget_mut().widget_mut().inc();
-        if t % 1000 == 0 {
-            self.idle.send(t as u64);
-        }
-        self.counter.buffer();
-        self.render_window(self.counter.window_id());
-    }
-
     pub fn drag(&mut self, start: Point, end: Point) {
+        self.inc_counter();
         self.window_manager.drag(start, end);
     }
 
     pub fn key_press(&mut self, key_code: KeyCode) {
+        self.inc_counter();
         if let Some(c) = key_code.to_char() {
-            let mut locked = self.text_field.lock();
-            locked.widget_mut().widget_mut().push(c);
-            locked.buffer();
-            crate::events::fire_redraw_window(locked.window_id());
+            self.text_field.send(TextFieldMessage::Append(c));
         }
     }
 }

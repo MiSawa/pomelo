@@ -25,8 +25,6 @@ const COLUMNS: usize = 160;
 lazy_static! {
     static ref GLOBAL_CONSOLE: Spinlock<Console> =
         Spinlock::new(Console::new(DESKTOP_FG_COLOR, DESKTOP_BG_COLOR));
-}
-lazy_static! {
     static ref FALLBACK_CONSOLE: Spinlock<Option<(Console, Screen)>> = Spinlock::new(None);
 }
 
