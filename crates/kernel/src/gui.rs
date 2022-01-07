@@ -54,19 +54,16 @@ pub fn create_gui(graphic_config: &GraphicConfig) -> GUI {
     GUI::new(window_manager, event_receiver, screen, counter, text_field)
 }
 
-lazy_static! {
-    static ref TASK_B_FRAME: Spinlock<Option<Window<widgets::Framed<Counter>>>> =
-        Spinlock::new(None);
-}
-
 #[derive(Clone, Debug)]
 enum TextFieldMessage {
     Blink,
     Append(char),
 }
 fn create_text_field(wm: &mut WindowManager) -> TypedTaskHandle<TextFieldMessage> {
-    let text_field = TextWindow::new(Color::BLACK, Color::WHITE, 30);
-    let text_field = Framed::new("Text box".to_string(), text_field);
+    let text_field = Framed::new(
+        "Text box".to_string(),
+        TextWindow::new(Color::BLACK, Color::WHITE, 30),
+    );
     let text_field =
         wm.add_builder(WindowBuilder::new(text_field).set_position(Point::new(300, 300)));
     crate::task::spawn_task(TaskBuilder::new_with_arg(
@@ -98,17 +95,21 @@ fn task_b(window_manager: &mut WindowManager) {
     let frame = Framed::new("Another task".to_string(), Counter::new());
     let frame =
         window_manager.add_builder(WindowBuilder::new(frame).set_position(Point::new(400, 200)));
-    TASK_B_FRAME.lock().get_or_insert_with(|| frame);
-    crate::task::spawn_task(TaskBuilder::new("task-b", task_b_main));
+    crate::task::spawn_task(TaskBuilder::new_with_arg(
+        "task-b",
+        task_b_main,
+        Box::new(frame),
+    ));
 }
 
-extern "sysv64" fn task_b_main(_receiver: Box<Receiver<u64>>) {
-    let mut locked = TASK_B_FRAME.lock();
-    let frame = locked.as_mut().unwrap();
+extern "sysv64" fn task_b_main(
+    _receiver: Box<Receiver<u64>>,
+    mut window: Box<Window<Framed<Counter>>>,
+) {
     loop {
-        frame.widget_mut().widget_mut().inc();
-        frame.buffer();
-        crate::events::fire_redraw_window(frame.window_id());
+        window.widget_mut().widget_mut().inc();
+        window.buffer();
+        crate::events::fire_redraw_window(window.window_id());
         // x86_64::instructions::interrupts::enable_and_hlt();
         // crate::task::current_task().put_sleep();
     }

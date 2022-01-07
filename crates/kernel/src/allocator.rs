@@ -9,7 +9,7 @@ use crate::memory_manager::{self, FrameSize};
 #[global_allocator]
 static ALLOCATOR: UninterruptedAlloc = UninterruptedAlloc::empty();
 
-const MEMORY_LIMIT: usize = 768 * 1024 * 1024;
+const MEMORY_LIMIT: usize = 512 * 1024 * 1024;
 
 pub fn initialize(memory_mapping: &MemoryMapping) {
     let mut mm = memory_manager::initialize(memory_mapping);

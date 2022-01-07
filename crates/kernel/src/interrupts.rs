@@ -40,13 +40,13 @@ fn end_of_interrupt() {
 }
 
 extern "x86-interrupt" fn interrupt_handler_xhci(_stack_frame: InterruptStackFrame) {
-    // log::warn!("Handling XHCI interruption");
+    log::trace!("Handling XHCI interruption");
     crate::events::fire_xhci();
     end_of_interrupt()
 }
 
 extern "x86-interrupt" fn interrupt_handler_lapic_timer(_stack_frame: InterruptStackFrame) {
-    // log::warn!("Handling LAPIC timer interruption");
+    log::trace!("Handling LAPIC timer interruption");
     crate::timer::tick();
     let need_context_switch = crate::task::tick_and_check_context_switch();
     end_of_interrupt();

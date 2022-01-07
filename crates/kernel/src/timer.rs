@@ -122,12 +122,14 @@ lazy_static! {
     static ref GLOBAL_TIMER: Spinlock<Timer> = Spinlock::new(Timer::new());
 }
 pub fn tick() {
-    GLOBAL_TIMER.lock().tick();
+    x86_64::instructions::interrupts::without_interrupts(|| GLOBAL_TIMER.lock().tick());
 }
 pub fn register<T: 'static + Send>(delay_millis: u64, handle: TypedTaskHandle<T>, message: T) {
-    GLOBAL_TIMER
-        .lock()
-        .register(delay_millis, move || handle.send(message))
+    x86_64::instructions::interrupts::without_interrupts(|| {
+        GLOBAL_TIMER
+            .lock()
+            .register(delay_millis, move || handle.send(message))
+    })
 }
 pub fn schedule<T: 'static + Send + Clone>(
     initial_delay_millis: u64,
@@ -135,11 +137,13 @@ pub fn schedule<T: 'static + Send + Clone>(
     handle: TypedTaskHandle<T>,
     message: T,
 ) {
-    GLOBAL_TIMER
-        .lock()
-        .schedule(initial_delay_millis, interval_millis, move || {
-            handle.send(message.clone())
-        })
+    x86_64::instructions::interrupts::without_interrupts(|| {
+        GLOBAL_TIMER
+            .lock()
+            .schedule(initial_delay_millis, interval_millis, move || {
+                handle.send(message.clone())
+            })
+    })
 }
 
 enum Task {

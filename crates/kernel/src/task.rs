@@ -86,12 +86,14 @@ pub fn initialize<T>() -> (Receiver<T>, TypedTaskHandle<T>) {
 }
 
 pub fn tick_and_check_context_switch() -> bool {
-    let ret = TICKS_UNTIL_NEXT_PREEMPTION
-        .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |prev| {
-            Some(prev.saturating_sub(1))
-        })
-        .unwrap();
-    ret == 0
+    x86_64::instructions::interrupts::without_interrupts(|| {
+        let ret = TICKS_UNTIL_NEXT_PREEMPTION
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |prev| {
+                Some(prev.saturating_sub(1))
+            })
+            .unwrap();
+        ret == 0
+    })
 }
 
 fn with_task_manager<T, F: FnOnce(LockedManager) -> T>(f: F) -> Result<T> {
@@ -121,6 +123,7 @@ pub fn try_switch_context() -> Result<()> {
                 false
             }
             Err(ContextSwitchError::NothingToRun) => {
+                // Since we have the idle task, there should be something to run
                 log::error!("Nothing to run");
                 drop(manager);
                 x86_64::instructions::interrupts::enable_and_hlt();
@@ -158,6 +161,7 @@ struct TaskHandleImpl {
     /// Bit 0 corresponds to the waking flag, and
     /// the other 63 bits correspond to the generation.
     state: AtomicU64,
+    last_run_global_generation: AtomicGeneration,
 }
 #[derive(Clone)]
 pub struct TaskHandle {
@@ -171,6 +175,7 @@ impl TaskHandle {
             name,
             priority: AtomicTaskPriority::new(priority),
             state: AtomicU64::new(state),
+            last_run_global_generation: AtomicGeneration::new(0),
         };
         Self {
             inner: Arc::new(inner),
@@ -543,6 +548,9 @@ impl TaskManager {
                 }
             }
         }
+        self.task_queue
+            .make_contiguous()
+            .sort_by_key(|t| t.0.inner.last_run_global_generation.load(Ordering::SeqCst));
         self.current_generation = global_generation;
     }
 
@@ -557,6 +565,10 @@ impl TaskManager {
             let current_name = self.current_task.0.inner.name;
             let current = self.current_task.1;
             let next_name = handle.inner.name;
+            handle
+                .inner
+                .last_run_global_generation
+                .store(self.current_generation, Ordering::SeqCst);
             self.current_task = (handle, ptr);
             Ok(ContextSwitchPartial {
                 current,
