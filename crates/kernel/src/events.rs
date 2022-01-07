@@ -93,6 +93,7 @@ pub fn fire_redraw_window(id: WindowId) {
             q.push_back(Event::RedrawWindow(id))
         } else {
             q.clear();
+            q.push_back(Event::Redraw);
         }
     });
     with_handle(&GUI_HANDLE, |q| q.awake());
@@ -103,6 +104,7 @@ pub fn fire_redraw_area(area: Rectangle) {
             q.push_back(Event::RedrawArea(area));
         } else {
             q.clear();
+            q.push_back(Event::Redraw);
         }
     });
     with_handle(&GUI_HANDLE, |q| q.awake());

@@ -41,4 +41,3 @@ unsafe impl GlobalAlloc for UninterruptedAlloc {
         x86_64::instructions::interrupts::without_interrupts(|| self.0.dealloc(ptr, layout))
     }
 }
-
