@@ -27,7 +27,7 @@ const GLYPH_SIZE: Size = Size::new(GLYPH_WIDTH, GLYPH_HEIGHT);
 pub fn create_terminal(wm: &mut WindowManager) {
     let terminal = Framed::new(
         "Terminal".to_string(),
-        Terminal::new(wm.pixel_format(), 60, 16),
+        Terminal::new(wm.pixel_format(), 16, 60),
     );
     wm.create_and_spawn(
         TaskedWindowBuilder::new("terminal", terminal, terminal_main)
@@ -47,17 +47,18 @@ impl From<WindowEvent> for TerminalMessage {
 }
 
 struct Terminal {
-    cols: usize,
     rows: usize,
+    cols: usize,
     buffers: VecDeque<VecBufferCanvas>,
     current_string: String,
-    cursor_line: usize,
+    cursor_row: usize,
+    cursor_col: usize,
     cursor_visible: bool,
     focused: bool,
     dirty: bool,
 }
 impl Terminal {
-    fn new(pixel_format: PixelFormat, cols: usize, rows: usize) -> Self {
+    fn new(pixel_format: PixelFormat, rows: usize, cols: usize) -> Self {
         let buffers = core::iter::repeat_with(|| {
             let size = Size::new(cols as UCoordinate * GLYPH_WIDTH, GLYPH_HEIGHT);
             let mut buf = VecBufferCanvas::vec_backed(pixel_format, size);
@@ -66,16 +67,19 @@ impl Terminal {
         })
         .take(rows)
         .collect();
-        Self {
-            cols,
+        let mut this = Self {
             rows,
+            cols,
             buffers,
             current_string: String::new(),
-            cursor_line: 0,
+            cursor_row: 0,
+            cursor_col: 0,
             cursor_visible: true,
             focused: true,
             dirty: true,
-        }
+        };
+        this.prompt();
+        this
     }
 
     fn col_to_point(c: usize) -> Point {
@@ -89,9 +93,9 @@ impl Terminal {
         } else {
             BG_COLOR
         };
-        self.buffers[self.cursor_line].fill_rectangle(
+        self.buffers[self.cursor_row].fill_rectangle(
             color,
-            Rectangle::new(Self::col_to_point(self.current_string.len()), GLYPH_SIZE),
+            Rectangle::new(Self::col_to_point(self.cursor_col), GLYPH_SIZE),
         );
         self.dirty = true;
     }
@@ -101,50 +105,103 @@ impl Terminal {
         if self.cursor_visible {
             self.flip_cursor_visibility();
         }
-        if self.cursor_line + 1 == self.buffers.len() {
+        if self.cursor_row + 1 == self.buffers.len() {
             self.buffers.rotate_left(1);
-            self.buffers.back_mut().unwrap().fill_rectangle(
-                BG_COLOR,
-                Rectangle::new(
-                    Point::new(0, 0),
-                    Size::new(UCoordinate::MAX, UCoordinate::MAX),
-                ),
-            );
+            let last = self.buffers.back_mut().unwrap();
+            last.fill_rectangle(BG_COLOR, last.bounding_box());
             self.dirty = true;
         } else {
-            self.cursor_line += 1;
+            self.cursor_row += 1;
         }
-        self.current_string.clear();
+        self.cursor_col = 0;
     }
 
-    fn push_char(&mut self, c: char) {
+    fn push_char_impl(&mut self, c: char, add_to_command: bool) {
         if c == '\n' {
             self.new_line();
+            let command = core::mem::take(&mut self.current_string);
+            self.execute_command(command);
+            self.prompt();
         } else if c == '\x08' {
             if self.current_string.pop().is_some() {
-                // Delete the char as well as the cursor
-                self.buffers[self.cursor_line].fill_rectangle(
+                // Delete cursor
+                self.buffers[self.cursor_row].fill_rectangle(
                     BG_COLOR,
-                    Rectangle::new(
-                        Self::col_to_point(self.current_string.len()),
-                        Size::new(GLYPH_WIDTH * 2, GLYPH_HEIGHT),
-                    ),
+                    Rectangle::new(Self::col_to_point(self.cursor_col), GLYPH_SIZE),
+                );
+                if self.cursor_col == 0 {
+                    if self.cursor_row == 0 {
+                        // Happens when you filled chars until it scrolls, and then go back to the top.
+                        // Just ignore it.
+                    } else {
+                        self.cursor_row -= 1;
+                        self.cursor_col = self.cols - 1;
+                    }
+                } else {
+                    self.cursor_col -= 1;
+                }
+                // Delete the char
+                self.buffers[self.cursor_row].fill_rectangle(
+                    BG_COLOR,
+                    Rectangle::new(Self::col_to_point(self.cursor_col), GLYPH_SIZE),
                 );
             }
         } else {
             // Delete cursor
-            self.buffers[self.cursor_line].fill_rectangle(
+            self.buffers[self.cursor_row].fill_rectangle(
                 BG_COLOR,
-                Rectangle::new(Self::col_to_point(self.current_string.len()), GLYPH_SIZE),
+                Rectangle::new(Self::col_to_point(self.cursor_col), GLYPH_SIZE),
             );
-            self.buffers[self.cursor_line].draw_char(
+            // Write char
+            self.buffers[self.cursor_row].draw_char(
                 FG_COLOR,
-                Self::col_to_point(self.current_string.len()),
+                Self::col_to_point(self.cursor_col),
                 c,
             );
-            self.current_string.push(c);
+            self.cursor_col += 1;
+            if self.cursor_col == self.cols {
+                self.new_line();
+            }
+            if add_to_command {
+                self.current_string.push(c);
+            }
         }
         self.dirty = true;
+    }
+
+    fn push_char(&mut self, c: char) {
+        self.push_char_impl(c, true);
+    }
+
+    fn prompt(&mut self) {
+        self.push_char_impl('>', false);
+    }
+
+    fn execute_command(&mut self, command: String) {
+        if let Some((command, args)) = command.split_once(' ') {
+            if command == "echo" {
+                for c in args.chars() {
+                    self.push_char_impl(c, false);
+                }
+                self.new_line();
+            } else {
+                for c in "Unknown command".chars() {
+                    self.push_char_impl(c, false);
+                }
+                self.new_line();
+            }
+        } else if command == "clear" {
+            self.cursor_row = 0;
+            self.cursor_col = 0;
+            for buffer in self.buffers.iter_mut() {
+                buffer.fill_rectangle(BG_COLOR, buffer.bounding_box());
+            }
+        } else {
+            for c in "Unknown command".chars() {
+                self.push_char_impl(c, false);
+            }
+            self.new_line();
+        }
     }
 }
 
