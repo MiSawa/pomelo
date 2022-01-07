@@ -10,6 +10,8 @@ use super::windows::WindowEvent;
 
 pub mod console;
 pub mod desktop;
+pub mod terminal;
+pub mod text_field;
 pub mod text_window;
 
 pub trait Widget {
@@ -60,7 +62,7 @@ impl<W: Widget> Widget for Framed<W> {
         self.widget.render(&mut buffer);
         let mut size = buffer.size();
         size.x += 8;
-        size.y += 32;
+        size.y += 27;
         canvas.resize(size);
         let title_color = if self.focused {
             Color::new(0, 0, 0x84)
@@ -138,7 +140,7 @@ impl<W: Widget> Widget for Framed<W> {
                 );
             }
         }
-        canvas.draw_buffer(Vector2d::new(4, 28), &buffer)
+        canvas.draw_buffer(Vector2d::new(4, 23), &buffer)
     }
 }
 

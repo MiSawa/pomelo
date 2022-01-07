@@ -1,4 +1,4 @@
-use alloc::{boxed::Box, string::ToString};
+use alloc::string::ToString;
 use pomelo_common::graphics::GraphicConfig;
 
 use crate::{
@@ -10,17 +10,17 @@ use crate::{
         Color, Point, Rectangle, Size, UCoordinate, Vector2d,
     },
     gui::{
-        widgets::{console, text_window::TextWindow, Framed},
+        widgets::{console, text_field, text_window::TextWindow, Framed},
         window_manager::{WindowId, WindowManager},
     },
     keyboard::KeyCode,
-    task::{self, Receiver},
+    task::Receiver,
 };
 
 use self::{
     widgets::{desktop::Desktop, Widget},
     window_manager::{TaskedWindowBuilder, WindowBuilder},
-    windows::{Window, WindowEvent},
+    windows::Window,
 };
 
 pub mod mouse;
@@ -53,50 +53,15 @@ pub fn create_gui(graphic_config: &GraphicConfig) -> GUI {
     GUI::new(window_manager, event_receiver, screen, counter)
 }
 
-#[derive(Clone, Copy, Debug)]
-enum TextFieldMessage {
-    Blink,
-    WindowEvent(WindowEvent),
-}
-impl From<WindowEvent> for TextFieldMessage {
-    fn from(e: WindowEvent) -> Self {
-        Self::WindowEvent(e)
-    }
-}
 fn create_text_field(wm: &mut WindowManager) {
     let text_field = Framed::new(
         "Text box".to_string(),
         TextWindow::new(Color::BLACK, Color::WHITE, 30),
     );
     wm.create_and_spawn(
-        TaskedWindowBuilder::new("text_field", text_field, text_field_main)
+        TaskedWindowBuilder::new("text_field", text_field, text_field::text_field_main)
             .configure_window(|w| w.set_position(Point::new(300, 300))),
     );
-}
-extern "sysv64" fn text_field_main(
-    mut receiver: Box<Receiver<TextFieldMessage>>,
-    mut text_field: Box<Window<Framed<TextWindow>>>,
-) {
-    crate::timer::schedule(500, 500, receiver.handle(), TextFieldMessage::Blink);
-    loop {
-        let message = receiver.dequeue_or_wait();
-        match message {
-            TextFieldMessage::Blink => text_field
-                .widget_mut()
-                .widget_mut()
-                .flip_cursor_visibility(),
-            TextFieldMessage::WindowEvent(e) => {
-                if let WindowEvent::KeyPress(k) = e {
-                    if let Some(c) = k.to_char() {
-                        text_field.widget_mut().widget_mut().push(c);
-                    }
-                }
-                text_field.widget_mut().handle_window_event(e);
-            }
-        }
-        text_field.buffer();
-        crate::events::fire_redraw_window(text_field.window_id());
-    }
 }
 
 const TRANSPARENT_COLOR: Color = Color::new(1, 2, 3);
