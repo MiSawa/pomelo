@@ -49,6 +49,7 @@ pub fn create_gui(graphic_config: &GraphicConfig) -> GUI {
         window_manager.create(WindowBuilder::new(counter).set_position(Point::new(300, 200)));
 
     create_text_field(&mut window_manager);
+    crate::gui::widgets::terminal::create_terminal(&mut window_manager);
 
     GUI::new(window_manager, event_receiver, screen, counter)
 }

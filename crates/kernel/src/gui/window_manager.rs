@@ -227,6 +227,10 @@ impl WindowManager {
         }
     }
 
+    pub fn pixel_format(&self) -> PixelFormat {
+        self.pixel_format
+    }
+
     fn create_window<W: Widget>(&self, widget: W) -> (WindowHandle, Window<W>) {
         let state = WindowStateShared::new(self.size);
         let (producer, consumer) =
