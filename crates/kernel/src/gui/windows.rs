@@ -4,6 +4,8 @@ use super::{
 };
 use crate::{
     graphics::{buffer::VecBufferCanvas, Point, Rectangle, Size, Vector2d},
+    keyboard::KeyCode,
+    task::TypedTaskHandle,
     triple_buffer::Producer,
 };
 
@@ -19,6 +21,43 @@ impl MoveNeedRedraw {
     }
     pub fn redraw_all(self) {
         crate::events::fire_redraw();
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum WindowEvent {
+    Focus,
+    Blur,
+    KeyPress(KeyCode),
+}
+
+pub trait WindowEventHandler {
+    fn on_focus(&mut self) {}
+    fn on_blur(&mut self) {}
+    fn on_key_press(&mut self, _key: KeyCode) {}
+    fn handle_window_event(&mut self, e: WindowEvent) {
+        match e {
+            WindowEvent::Focus => self.on_focus(),
+            WindowEvent::Blur => self.on_blur(),
+            WindowEvent::KeyPress(k) => self.on_key_press(k),
+        }
+    }
+}
+
+pub struct NopWindowEventHandler;
+impl WindowEventHandler for NopWindowEventHandler {}
+
+impl<E: From<WindowEvent>> WindowEventHandler for TypedTaskHandle<E> {
+    fn on_focus(&mut self) {
+        self.send(WindowEvent::Focus.into())
+    }
+
+    fn on_blur(&mut self) {
+        self.send(WindowEvent::Blur.into())
+    }
+
+    fn on_key_press(&mut self, key: KeyCode) {
+        self.send(WindowEvent::KeyPress(key).into());
     }
 }
 

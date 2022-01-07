@@ -1,28 +1,60 @@
-use crate::graphics::{
-    buffer::VecBufferCanvas, canvas::Canvas, Color, ICoordinate, Point, Rectangle, Size, Vector2d,
+use crate::{
+    graphics::{
+        buffer::VecBufferCanvas, canvas::Canvas, Color, ICoordinate, Point, Rectangle, Size,
+        Vector2d,
+    },
+    keyboard::KeyCode,
 };
+
+use super::windows::WindowEvent;
 
 pub mod console;
 pub mod desktop;
 pub mod text_window;
 
 pub trait Widget {
+    fn on_focus(&mut self) {}
+    fn on_blur(&mut self) {}
+    fn on_key_press(&mut self, _key_code: KeyCode) {}
+    fn handle_window_event(&mut self, window_event: WindowEvent) {
+        match window_event {
+            WindowEvent::Focus => self.on_focus(),
+            WindowEvent::Blur => self.on_blur(),
+            WindowEvent::KeyPress(key_code) => self.on_key_press(key_code),
+        }
+    }
     fn render(&self, canvas: &mut VecBufferCanvas);
 }
 
 pub struct Framed<W: Widget> {
     title: alloc::string::String,
     widget: W,
+    focused: bool,
 }
 impl<W: Widget> Framed<W> {
     pub fn new(title: alloc::string::String, widget: W) -> Self {
-        Self { title, widget }
+        Self {
+            title,
+            widget,
+            focused: false,
+        }
     }
     pub fn widget_mut(&mut self) -> &mut W {
         &mut self.widget
     }
 }
 impl<W: Widget> Widget for Framed<W> {
+    fn on_focus(&mut self) {
+        self.focused = true;
+        self.widget.on_focus();
+    }
+    fn on_blur(&mut self) {
+        self.focused = false;
+        self.widget.on_blur();
+    }
+    fn on_key_press(&mut self, key_code: KeyCode) {
+        self.widget.on_key_press(key_code);
+    }
     fn render(&self, canvas: &mut VecBufferCanvas) {
         let mut buffer = VecBufferCanvas::empty(canvas.pixel_format());
         self.widget.render(&mut buffer);
@@ -30,6 +62,11 @@ impl<W: Widget> Widget for Framed<W> {
         size.x += 8;
         size.y += 32;
         canvas.resize(size);
+        let title_color = if self.focused {
+            Color::new(0, 0, 0x84)
+        } else {
+            Color::gray_scale(0x84)
+        };
         canvas.fill_rectangle(
             Color::gray_scale(0xC6),
             Rectangle::new(Point::new(0, 0), Size::new(size.x, 1)),
@@ -65,7 +102,7 @@ impl<W: Widget> Widget for Framed<W> {
             Rectangle::new(Point::new(2, 2), Size::new(size.x - 4, size.y - 4)),
         );
         canvas.fill_rectangle(
-            Color::new(0, 0, 0x84),
+            title_color,
             Rectangle::new(Point::new(3, 3), Size::new(size.x - 6, 18)),
         );
         canvas.fill_rectangle(

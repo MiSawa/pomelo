@@ -10,7 +10,7 @@ use crate::{
     gui::{window_manager::WindowId, GUI},
     keyboard::{self, KeyCode},
     prelude::*,
-    task::{spawn_task, Receiver, TaskBuilder, TypedTaskHandle},
+    task::{self, spawn_task, Receiver, TypedTaskHandle},
     xhci,
 };
 
@@ -22,10 +22,10 @@ lazy_static! {
 const MAX_PENDING_REDRAW: usize = 10;
 
 pub fn initialize() -> Receiver<Event> {
-    let (receiver, queue) = crate::task::initialize::<Event>();
+    let (receiver, queue) = task::initialize::<Event>();
     GUI_HANDLE.store(Box::into_raw(Box::new(queue)), Ordering::Release);
     let handle = spawn_task(
-        TaskBuilder::new("xhci", xhci_handler)
+        task::builder("xhci", xhci_handler)
             .set_priority(10)
             .set_stack_size(10 * 1024 * 1024),
     );

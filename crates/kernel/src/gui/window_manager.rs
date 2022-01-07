@@ -2,18 +2,19 @@ extern crate alloc;
 
 use core::sync::atomic::{AtomicUsize, Ordering};
 
-use alloc::{sync::Arc, vec, vec::Vec};
+use alloc::{boxed::Box, sync::Arc, vec, vec::Vec};
 use pomelo_common::graphics::{GraphicConfig, PixelFormat};
 use spinning_top::{Spinlock, SpinlockGuard};
 
 use super::{
     widgets::Widget,
-    windows::{MoveNeedRedraw, Window},
+    windows::{MoveNeedRedraw, NopWindowEventHandler, Window, WindowEvent, WindowEventHandler},
 };
 use crate::{
     graphics::{
         buffer::VecBufferCanvas, canvas::Canvas, Point, Rectangle, Size, UCoordinate, Vector2d,
     },
+    task::{TaskBuilder, TaskMainWithArg},
     triple_buffer::{Consumer, TripleBuffer},
 };
 
@@ -83,6 +84,7 @@ struct WindowHandle {
     id: WindowId,
     state: WindowStateShared,
     buffer: Consumer<VecBufferCanvas>,
+    event_handler: Box<dyn WindowEventHandler>,
 }
 
 pub enum MaybeRegistered<W: Widget> {
@@ -137,6 +139,38 @@ impl<W: Widget> MaybeRegistered<W> {
     }
 }
 
+pub struct TaskedWindowBuilder<W: Widget, E: From<WindowEvent>> {
+    window_builder: WindowBuilder<W>,
+    task_builder: TaskBuilder<E, Window<W>, !>,
+}
+impl<W: Widget, E: From<WindowEvent>> TaskedWindowBuilder<W, E> {
+    #[must_use]
+    pub fn new(name: &'static str, widget: W, task_main: TaskMainWithArg<E, Window<W>>) -> Self {
+        Self {
+            window_builder: WindowBuilder::new(widget),
+            task_builder: crate::task::builder_with_arg(name, task_main),
+        }
+    }
+
+    #[must_use]
+    pub fn configure_window(
+        mut self,
+        f: impl FnOnce(WindowBuilder<W>) -> WindowBuilder<W>,
+    ) -> Self {
+        self.window_builder = f(self.window_builder);
+        self
+    }
+
+    #[must_use]
+    pub fn configure_task(
+        mut self,
+        f: impl FnOnce(TaskBuilder<E, Window<W>, !>) -> TaskBuilder<E, Window<W>, !>,
+    ) -> Self {
+        self.task_builder = f(self.task_builder);
+        self
+    }
+}
+
 pub struct WindowBuilder<W: Widget> {
     widget: W,
     position: Point,
@@ -179,6 +213,7 @@ pub struct WindowManager {
     layers: Vec<WindowHandle>,
     top_layers: Vec<WindowHandle>,
     size: Size,
+    focused: Option<WindowId>,
 }
 
 impl WindowManager {
@@ -188,6 +223,7 @@ impl WindowManager {
             layers: vec![],
             top_layers: vec![],
             size,
+            focused: None,
         }
     }
 
@@ -201,12 +237,13 @@ impl WindowManager {
                 id,
                 state: state.clone(),
                 buffer: consumer,
+                event_handler: Box::new(NopWindowEventHandler),
             },
             Window::new(id, state, producer, widget),
         )
     }
 
-    pub fn add_builder<W: Widget>(&mut self, builder: WindowBuilder<W>) -> Window<W> {
+    pub fn create<W: Widget>(&mut self, builder: WindowBuilder<W>) -> Window<W> {
         let (handle, mut window) = self.create_window(builder.widget);
         let mut state = handle.state.locked();
         state.position = builder.position;
@@ -221,11 +258,32 @@ impl WindowManager {
         window
     }
 
-    pub fn add<W: Widget>(&mut self, widget: W) -> Window<W> {
-        let (handle, mut window) = self.create_window(widget);
-        self.layers.push(handle);
+    pub fn create_and_spawn<W: Widget, E: 'static + From<WindowEvent>>(
+        &mut self,
+        builder: TaskedWindowBuilder<W, E>,
+    ) {
+        let task_builder = builder.task_builder;
+        let window_builder = builder.window_builder;
+        let (mut window_handle, mut window) = self.create_window(window_builder.widget);
         window.buffer();
-        window
+
+        let waking = task_builder.waking();
+        let task_handle =
+            crate::task::spawn_task(task_builder.set_waking(true).set_arg(Box::new(window)));
+        window_handle.event_handler = Box::new(task_handle.clone());
+
+        let mut state = window_handle.state.locked();
+        state.position = window_builder.position;
+        state.draggable = window_builder.draggable;
+        drop(state);
+        if waking {
+            task_handle.awake();
+        }
+        if window_builder.top {
+            self.top_layers.push(window_handle);
+        } else {
+            self.layers.push(window_handle);
+        }
     }
 
     pub fn draw_window<C: Canvas>(&mut self, canvas: &mut C, id: WindowId) -> Option<Rectangle> {
@@ -255,6 +313,8 @@ impl WindowManager {
     }
 
     pub fn drag(&mut self, start: Point, end: Point) {
+        let mut redraw_area = None;
+        let mut window_id_to_focus = None;
         for window in self.layers.iter().chain(self.top_layers.iter()).rev() {
             let mut state = window.state.locked();
             let pos = state.position;
@@ -263,9 +323,46 @@ impl WindowManager {
                 let screen_rect = Rectangle::new(Point::zero(), self.size);
                 state.position = (state.position + (end - start)).clamped(screen_rect);
                 let new_rect = rect + (state.position - pos);
-                crate::events::fire_redraw_area(rect.union(&new_rect));
+                redraw_area = Some(rect.union(&new_rect));
+                window_id_to_focus = Some(window.id);
                 break;
             }
+        }
+        if let Some(new_id) = window_id_to_focus {
+            if self.focused != window_id_to_focus {
+                if let Some(old_id) = self.focused.take() {
+                    if let Some(w) = self
+                        .layers
+                        .iter_mut()
+                        .chain(self.top_layers.iter_mut())
+                        .rev()
+                        .find(|w| w.id == old_id)
+                    {
+                        w.event_handler.on_blur();
+                    }
+                }
+            }
+            self.focused = window_id_to_focus;
+            if let Some(w) = self
+                .layers
+                .iter_mut()
+                .chain(self.top_layers.iter_mut())
+                .rev()
+                .find(|w| w.id == new_id)
+            {
+                w.event_handler.on_focus();
+            }
+            if let Some(i) =
+                self.layers
+                    .iter()
+                    .enumerate()
+                    .find_map(|(i, w)| if w.id == new_id { Some(i) } else { None })
+            {
+                self.layers[i..].rotate_right(1);
+            }
+        }
+        if let Some(area) = redraw_area {
+            crate::events::fire_redraw_area(area);
         }
     }
 
@@ -274,6 +371,20 @@ impl WindowManager {
             let buffer = window.buffer.read();
             let pos = window.state.position();
             canvas.draw_buffer(pos.into(), buffer);
+        }
+    }
+
+    fn get_window_handle(&mut self, id: WindowId) -> Option<&mut WindowHandle> {
+        self.layers
+            .iter_mut()
+            .chain(self.top_layers.iter_mut())
+            .find(|w| w.id == id)
+    }
+    pub fn key_press(&mut self, key_code: crate::keyboard::KeyCode) {
+        if let Some(id) = self.focused {
+            if let Some(handle) = self.get_window_handle(id) {
+                handle.event_handler.on_key_press(key_code);
+            }
         }
     }
 }

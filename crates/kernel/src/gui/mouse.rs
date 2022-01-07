@@ -20,7 +20,7 @@ const TRANSPARENT_COLOR: Color = Color::new(1, 2, 3);
 pub fn initialize(window_manager: &mut WindowManager) {
     MOUSE_CURSOR.lock().get_or_insert_with(|| {
         let cursor = MouseCursorImage;
-        let window = window_manager.add_builder(
+        let window = window_manager.create(
             WindowBuilder::new(cursor)
                 .set_draggable(false)
                 .set_position(Point::new(200, 200))

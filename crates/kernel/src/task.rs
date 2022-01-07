@@ -110,8 +110,8 @@ fn with_task_manager<T, F: FnOnce(LockedManager) -> T>(f: F) -> Result<T> {
     })
 }
 
-pub fn spawn_task<T>(task_builder: TaskBuilder<T>) -> TypedTaskHandle<T> {
-    with_task_manager(|mut manager| manager.add_task(task_builder)).unwrap()
+pub fn spawn_task<T, A>(task_builder: TaskBuilder<T, A, A>) -> TypedTaskHandle<T> {
+    with_task_manager(|mut manager| manager.spawn(task_builder)).unwrap()
 }
 
 pub fn try_switch_context() -> Result<()> {
@@ -337,44 +337,59 @@ impl TaskStack {
     }
 }
 
-pub struct TaskBuilder<T> {
+type Empty = !;
+pub struct TaskBuilder<Message, Arg, GivenArg> {
     name: &'static str,
     task_main: u64,
     arg: u64,
     stack_size: usize,
     priority: TaskPriority,
-    _phantom: PhantomData<T>,
+    waking: bool,
+    _phantom: PhantomData<(Message, Arg, GivenArg)>,
 }
-
-impl<T> TaskBuilder<T> {
-    #[must_use]
-    pub fn new(name: &'static str, task_main: TaskMain<T>) -> Self {
-        Self {
-            name,
-            task_main: task_main as *const u8 as u64,
-            arg: 0,
-            stack_size: 512 * 1024, // 128 KiB
-            priority: 5,
-            _phantom: Default::default(),
-        }
+pub fn builder<T>(name: &'static str, main: TaskMain<T>) -> TaskBuilder<T, Empty, Empty> {
+    TaskBuilder {
+        name,
+        task_main: main as *const u8 as u64,
+        arg: 0,
+        stack_size: 128 * 1024, // 128 KiB,
+        priority: 5,
+        waking: true,
+        _phantom: Default::default(),
     }
-
+}
+pub fn builder_with_arg<T, A>(
+    name: &'static str,
+    main: TaskMainWithArg<T, A>,
+) -> TaskBuilder<T, A, Empty> {
+    TaskBuilder {
+        name,
+        task_main: main as *const u8 as u64,
+        arg: 0,
+        stack_size: 128 * 1024, // 128 KiB,
+        priority: 5,
+        waking: true,
+        _phantom: Default::default(),
+    }
+}
+impl<T, A> TaskBuilder<T, A, Empty> {
     #[must_use]
-    pub fn new_with_arg<U>(
-        name: &'static str,
-        task_main: TaskMainWithArg<T, U>,
-        arg: Box<U>,
-    ) -> Self {
-        Self {
-            name,
-            task_main: task_main as *const u8 as u64,
+    pub fn set_arg(self, arg: Box<A>) -> TaskBuilder<T, A, A> {
+        TaskBuilder {
+            name: self.name,
+            task_main: self.task_main,
             arg: Box::into_raw(arg) as u64,
-            stack_size: 128 * 1024, // 128 KiB
-            priority: 5,
+            stack_size: self.stack_size,
+            priority: self.priority,
+            waking: self.waking,
             _phantom: Default::default(),
         }
     }
-
+}
+impl<T, A, B> TaskBuilder<T, A, B> {
+    pub fn waking(&self) -> bool {
+        self.waking
+    }
     #[must_use]
     pub fn set_stack_size(mut self, stack_size: usize) -> Self {
         self.stack_size = stack_size;
@@ -384,6 +399,12 @@ impl<T> TaskBuilder<T> {
     #[must_use]
     pub fn set_priority(mut self, priority: TaskPriority) -> Self {
         self.priority = priority;
+        self
+    }
+
+    #[must_use]
+    pub fn set_waking(mut self, waking: bool) -> Self {
+        self.waking = waking;
         self
     }
 }
@@ -413,14 +434,14 @@ impl Task {
             },
         )
     }
-    fn create_with_handle<T>(task_builder: TaskBuilder<T>) -> (Self, TypedTaskHandle<T>) {
+    fn create_with_handle<T, A>(task_builder: TaskBuilder<T, A, A>) -> (Self, TypedTaskHandle<T>) {
         use x86_64::instructions::segmentation::{Segment, CS, FS, GS, SS};
 
         let handle = TaskHandle::initialize(
             TaskId::new(),
             task_builder.name,
             task_builder.priority,
-            true,
+            task_builder.waking,
         );
         let receiver = Box::new(Receiver::new(handle.clone()));
         let producer = receiver.producer();
@@ -506,11 +527,11 @@ impl TaskManager {
             current_generation: old_generation,
             current_task: (handle, ptr),
         };
-        ret.add_task(TaskBuilder::new("idle", idle_task_main));
+        ret.spawn(builder("idle", idle_task_main).set_priority(0));
         (ret, receiver, typed_handle)
     }
 
-    fn add_task<T>(&mut self, task_builder: TaskBuilder<T>) -> TypedTaskHandle<T> {
+    fn spawn<T, A>(&mut self, task_builder: TaskBuilder<T, A, A>) -> TypedTaskHandle<T> {
         let (task, handle) = Task::create_with_handle(task_builder);
         assert!(
             self.tasks.insert(task.id(), task).is_none(),
@@ -557,10 +578,10 @@ impl TaskManager {
     fn start_context_switch(
         &mut self,
     ) -> core::result::Result<ContextSwitchPartial, ContextSwitchError> {
-        self.refresh_task_queue_if_necessary();
         if !self.task_queue.is_empty() {
             self.task_queue.rotate_left(1);
         }
+        self.refresh_task_queue_if_necessary();
         if let Some((handle, ptr)) = self.task_queue.front().cloned() {
             let current_name = self.current_task.0.inner.name;
             let current = self.current_task.1;

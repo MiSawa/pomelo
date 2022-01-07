@@ -154,7 +154,7 @@ impl Console {
     fn register(&mut self, layer_manager: &mut WindowManager) {
         for (i, row) in self.rows.iter_mut().enumerate() {
             row.register_once_with(layer_manager, |wm, r| {
-                wm.add_builder(
+                wm.create(
                     WindowBuilder::new(r)
                         .set_position(Point::new(
                             0,
