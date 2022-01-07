@@ -116,12 +116,14 @@ impl Terminal {
         self.cursor_col = 0;
     }
 
-    fn push_char_impl(&mut self, c: char, add_to_command: bool) {
+    fn push_char_impl(&mut self, c: char, command_related: bool) {
         if c == '\n' {
             self.new_line();
-            let command = core::mem::take(&mut self.current_string);
-            self.execute_command(command);
-            self.prompt();
+            if command_related {
+                let command = core::mem::take(&mut self.current_string);
+                self.execute_command(command);
+                self.prompt();
+            }
         } else if c == '\x08' {
             if self.current_string.pop().is_some() {
                 // Delete cursor
@@ -162,7 +164,7 @@ impl Terminal {
             if self.cursor_col == self.cols {
                 self.new_line();
             }
-            if add_to_command {
+            if command_related {
                 self.current_string.push(c);
             }
         }
@@ -175,6 +177,19 @@ impl Terminal {
 
     fn prompt(&mut self) {
         self.push_char_impl('>', false);
+    }
+
+    fn as_result_writer(&mut self) -> impl '_ + core::fmt::Write {
+        struct W<'a>(&'a mut Terminal);
+        impl<'a> core::fmt::Write for W<'a> {
+            fn write_str(&mut self, s: &str) -> core::fmt::Result {
+                for c in s.chars() {
+                    self.0.push_char_impl(c, false);
+                }
+                Ok(())
+            }
+        }
+        W(self)
     }
 
     fn execute_command(&mut self, command: String) {
@@ -195,6 +210,26 @@ impl Terminal {
             self.cursor_col = 0;
             for buffer in self.buffers.iter_mut() {
                 buffer.fill_rectangle(BG_COLOR, buffer.bounding_box());
+            }
+        } else if command == "lspci" {
+            use core::fmt::Write;
+            for device in crate::pci::scan_devices() {
+                for func in device.scan_functions() {
+                    let (base, sub, interface) = func.class().to_code();
+                    writeln!(
+                        self.as_result_writer(),
+                        "{:02x}:{:02x}.{} vend={:04x} head={:02x} class={:02x}.{:02x}.{:02x}",
+                        func.bus(),
+                        func.device(),
+                        func.function(),
+                        func.vendor_id(),
+                        func.header_type(),
+                        base,
+                        sub,
+                        interface
+                    )
+                    .ok();
+                }
             }
         } else {
             for c in "Unknown command".chars() {

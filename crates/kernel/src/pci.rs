@@ -107,26 +107,47 @@ pub struct PCICapabilityHeader {
 }
 
 impl PCIClass {
-    fn from_code(base: u8, sub: u8, interface: u8) -> Self {
+    pub fn from_code(base: u8, sub: u8, interface: u8) -> Self {
         match base {
             0x0c => Self::SerialBusController(SerialBusSubclass::from_code(sub, interface)),
             _ => Self::Unimplemented(base, sub, interface),
         }
     }
+    pub fn to_code(self) -> (u8, u8, u8) {
+        match self {
+            Self::SerialBusController(a) => {
+                let (b, c) = a.to_code();
+                (0x03, b, c)
+            }
+            Self::Unimplemented(a, b, c) => (a, b, c),
+        }
+    }
 }
 impl SerialBusSubclass {
-    fn from_code(sub: u8, interface: u8) -> Self {
+    pub fn from_code(sub: u8, interface: u8) -> Self {
         match sub {
             0x03 => Self::USBController(USBProgramInterface::from_code(interface)),
             _ => Self::Unimplemented(sub, interface),
         }
     }
+    pub fn to_code(self) -> (u8, u8) {
+        match self {
+            Self::USBController(a) => (0x03, a.to_code()),
+            Self::Unimplemented(a, b) => (a, b),
+        }
+    }
 }
 impl USBProgramInterface {
-    fn from_code(interface: u8) -> Self {
+    pub fn from_code(interface: u8) -> Self {
         match interface {
             0x30 => Self::XHCI,
             _ => Self::Unimplemented(interface),
+        }
+    }
+    pub fn to_code(self) -> u8 {
+        match self {
+            Self::XHCI => 0x30,
+            Self::Unimplemented(a) => a,
         }
     }
 }
