@@ -5,7 +5,7 @@
 #![feature(maybe_uninit_uninit_array)]
 #![feature(int_roundings)]
 #![feature(generic_const_exprs)]
-#![feature(ptr_to_from_bits)]
+#![feature(strict_provenance)]
 #![feature(naked_functions)]
 
 #[macro_use]

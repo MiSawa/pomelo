@@ -47,7 +47,7 @@ fn get_lapic_frequency(acpi2_rsdp: Option<*const core::ffi::c_void>) -> Result<u
 
         fn unmap_physical_region<T>(region: &acpi::PhysicalMapping<Self, T>) {}
     }
-    let table = unsafe { acpi::AcpiTables::from_rsdp(Handler, rsdp.to_bits())? };
+    let table = unsafe { acpi::AcpiTables::from_rsdp(Handler, rsdp.addr())? };
     let timer = table
         .platform_info()?
         .pm_timer
