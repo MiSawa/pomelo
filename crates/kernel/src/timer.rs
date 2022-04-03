@@ -35,6 +35,9 @@ fn get_lapic_frequency(acpi2_rsdp: Option<*const core::ffi::c_void>) -> Result<u
             physical_address: usize,
             size: usize,
         ) -> acpi::PhysicalMapping<Self, T> {
+            //TODO: Need a fix when we use non-identity mapping. Also better to do this phys->virt
+            // address conversion in somewhere central place so that it's easier to change paging
+            // from the identity mapping to something else.
             let virtual_start = core::ptr::NonNull::new(physical_address as *mut T).unwrap();
             acpi::PhysicalMapping::new(
                 physical_address,
@@ -47,7 +50,7 @@ fn get_lapic_frequency(acpi2_rsdp: Option<*const core::ffi::c_void>) -> Result<u
 
         fn unmap_physical_region<T>(region: &acpi::PhysicalMapping<Self, T>) {}
     }
-    let table = unsafe { acpi::AcpiTables::from_rsdp(Handler, rsdp.addr())? };
+    let table = unsafe { acpi::AcpiTables::from_rsdp(Handler, rsdp as usize)? };
     let timer = table
         .platform_info()?
         .pm_timer
