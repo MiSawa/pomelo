@@ -9,6 +9,8 @@ use x86_64::{
 };
 
 pub fn initialize() {
+    // Ah wait this seems to be wrong, I feel like I should obtain the page directory from
+    // Cr3::read().
     /// 1GB per page directory
     const PAGE_DIRECTORY_COUNT: usize = 64;
     static mut PML4_TABLE: PageTable = PageTable::new();

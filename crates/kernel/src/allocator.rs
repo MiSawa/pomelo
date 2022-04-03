@@ -16,6 +16,7 @@ pub fn initialize(memory_mapping: &MemoryMapping) {
     let allocated = mm
         .allocate(MEMORY_LIMIT / FrameSize::SIZE as usize)
         .expect("Unable to allocate memory frame......");
+    // TODO: Need physical to virtual conversion when we do something other than identity mapping
     let start_address = allocated.start.start_address().as_u64() as usize;
     let size = allocated.end.start_address().as_u64() as usize - start_address;
     ALLOCATOR.init(start_address, size);
